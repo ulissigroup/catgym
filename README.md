@@ -1,2 +1,2 @@
 # surface-seg
-Surface seggregation using Deep Reinforcement Learning
+Surface segregation using Deep Reinforcement Learning
