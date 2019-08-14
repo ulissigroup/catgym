@@ -15,6 +15,7 @@ from ase.io import read, write
 from tensorforce.environments import Environment
 from ase.optimize.bfgslinesearch import BFGSLineSearch
 
+from sella import MinModeAtoms, optimize
 
 ACTION_NAMES = ['up', 'down', 'left', 'right', 'forward', 'backward', 'steepest_descent', 'steepest_ascent']
 ACTION_DIRECTION = [
@@ -85,20 +86,6 @@ class Surface():
     def calculate_energy(self):
         return self.atoms.get_potential_energy()
 
-    def max_positions(self):
-        print("position shape:", self.atoms.positions.shape)
-        max_x = np.max(self.atoms.positions[:,0])
-        max_y = np.max(self.atoms.positions[:,1])
-        max_z = np.max(self.atoms.positions[:,2])
-        return max_x, max_y, max_z
-
-    def min_positions(self):
-        print("position shape:", self.atoms.positions.shape)
-        min_x = np.min(self.atoms.positions[:,0])
-        min_y = np.min(self.atoms.positions[:,1])
-        min_z = np.min(self.atoms.positions[:,2])
-        return min_x, min_y, min_z
-
     def current_positions(self):
         self.atoms.wrap()
         return self.atoms.positions[self.free_atoms].reshape(-1)
@@ -163,7 +150,7 @@ class SurfaceEnv(Environment):
     @property
     def actions(self):
         # return dict(num_actions=32+len(ACTION_NAMES), type='int')
-        return dict(num_actions=self._lattice.num_free_atoms()*len(ACTION_NAMES)+1, type='int')
+        return dict(num_actions=self._lattice.num_free_atoms()*len(ACTION_NAMES)+2, type='int')
 
     def reset(self):
         self._lattice.reset()
@@ -180,10 +167,32 @@ class SurfaceEnv(Environment):
         atom_idx = action // len(ACTION_DIRECTION)
         act_idx = action % len(ACTION_DIRECTION)
         
-        if action==self.actions['num_actions']-1:
-            1
+        if action==self.actions['num_actions']-2:
+            
+            fix = self._lattice.atoms.constraints[0].get_indices()
+
+            myminmode = MinModeAtoms(self._lattice.atoms,  # Your Atoms object
+                         self._lattice.atoms.get_calculator(),  # Your calculator
+                         constraints=dict(fix=fix),  # Your constraints
+                         trajectory='test_emt.traj',  # Optional trajectory
+                         )
+
+            x1 = optimize(myminmode,    # Your MinMode object
+                          maxiter=100,  # Maximum number of force evaluations
+                          ftol=1e-2,    # Norm of the force vector, convergence threshold
+                          r_trust=5e-4, # Initial trust radius (Angstrom per d.o.f.)
+                          order=1,      # Order of saddle point to find (set to 0 for minimization)
+                          dxL=1e-4,     # Finite difference displacement magnitude (Angstrom)
+                          maxres=0.1,   # Maximum residual for eigensolver convergence (should be <= 1)
+                          )
+
+            self._lattice.atoms.positions = x1.reshape((len(self._lattice.atoms),3))
+            
+        elif action==self.actions['num_actions']-1:
+            
             dyn = BFGSLineSearch(atoms=self._lattice.atoms, logfile=None)
-            dyn.run(0.2)
+            dyn.run(0.1)
+            
         else:
             if act_idx == 6:
                 force = self._lattice.atoms.get_forces()[self._lattice.free_atoms,:]
@@ -201,7 +210,9 @@ class SurfaceEnv(Environment):
     def execute(self, action):
         self.steps += 1
         reward = 0
-                
+        
+        cur_dist = np.linalg.norm(min_diff(self.init_atoms, self._lattice.atoms))
+#         print('cur_dist',cur_dist)
         # Terminal
         if self.steps >= self.max_timesteps - 1:
             
@@ -218,19 +229,33 @@ class SurfaceEnv(Environment):
             # reward *= 100
             # reward = -after_energy
             # reward = -self.curr_energy * 0.5
-            reward += -(self.curr_energy-self.initial_energy)*1000
-              
+            reward += -(self.curr_energy-self.initial_energy)*10
+#             new_dist = np.linalg.norm(min_diff(self.init_atoms, self._lattice.atoms))
         else:
+            
             after_energy = self.do_action(action)
             # reward = -after_energy
             # self.curr_energy = after_energy
             # reward = -self.curr_energy * 0.1
 #             reward = -(after_energy - self.init_energy) * 0.001
 #            reward = -after_energy * 0.002
-#
-#             reward += np.linalg.norm(min_diff(self.init_atoms, self._lattice.atoms))*0.001
+
+            
+        
+#             if cur_dist > self.init_distance:
+#                reward+=-(self.cur_dist-self.init_distance)
+#                self.init_distance = cur_dist
+            print(np.linalg.norm(min_diff(self.init_atoms, self._lattice.atoms)))
+            distance = np.linalg.norm(min_diff(self.init_atoms, self._lattice.atoms))
+            if distance<5:
+                reward += distance*0.01
+           
             self.curr_energy = after_energy
     
+#         new_dist = np.linalg.norm(min_diff(self.init_atoms, self._lattice.atoms))
+#         print('new_dist',new_dist)
+
+#         reward += (cur_dist-new_dist)
         #penalize the transition state
         if self.curr_energy > self.max_energy:
             reward+=-(self.curr_energy-self.max_energy)
