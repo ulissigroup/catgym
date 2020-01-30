@@ -10,12 +10,12 @@ import os
 import time
 import sys
 import numpy as np
+import tensorflow as tf
 
 from matplotlib import pyplot as plt
 from tensorforce import TensorForceError
 from tensorforce.agents import DQNAgent
 from tensorforce.execution import Runner
-# from tensorforce.contrib.openai_gym import OpenAIGym
 
 from surface_env import *
 
@@ -33,16 +33,18 @@ def plot_energy(energy, ylabel, save_path):
 
 def main():
     parser = argparse.ArgumentParser()
-
-    parser.add_argument('-e', '--episodes', type=int, default=int(1e5), help="Number of episodes")
+    parser.add_argument('-e', '--episodes', type=int, default=int(5e4), help="Number of episodes")
     parser.add_argument('-t', '--timesteps', type=int, default=None, help="Number of timesteps")
-    parser.add_argument('-hrz', '--horizon', type=int, default=800, help="Horizon of each episode")
+    parser.add_argument('-hrz', '--horizon', type=int, default=300, help="Horizon of each episode")
     parser.add_argument('-d', '--deterministic', action='store_true', default=False, help="Choose actions deterministically")
     parser.add_argument('-s', '--save', help="Save agent to this dir")
     parser.add_argument('-se', '--save-episodes', type=int, default=50, help="Save agent every x episodes")
     parser.add_argument('-l', '--load', help="Load agent from this dir")
-
+    parser.add_argument('--seed', default=0, type=int, help="random seed for numpy and tensorflow")
     args = parser.parse_args()
+
+    np.random.seed(args.seed)
+    tf.random.set_random_seed(args.seed)
 
     env = SurfaceEnv(args.horizon)
     print('Initial energy:', env.get_energy())
@@ -64,15 +66,7 @@ def main():
             "size": 32,
             "activation": "relu"
         }
-        # {
-        #     "type": "dense",
-        #     "size": 6+32,
-        #     "activation": "softmax"
-        # }
     ]
-
-    # print(env.states)
-    # print(env.states['shape'])
 
     agent = DQNAgent(
         states=env.states,
@@ -135,32 +129,57 @@ def main():
     )
 
     def episode_finished(r):
-        # positions = env.get_positions()
-        # print("pos diff:", np.sum(positions[1,:] - positions[0,:]))
-        # np.save('shit', positions)
-        if r.episode % 50 == 0:
-            positions = env.get_positions()
-            pos_fn = '_'.join(['pos_3', str(r.episode)])
-            pos_dir = os.path.join('new_pos', pos_fn)
-            np.save(pos_dir, positions)
-        if r.episode % 50 == 0:
-            agent_fn = '_'.join(['agent_3', str(r.episode)])
-            agent_dir = os.path.join('new_agents', agent_fn)
-            r.agent.save_model(agent_dir)
-            print("Saving agent to {}".format(agent_dir))
-        if r.episode % 50 == 0:
-            rew_fn = '.'.join(['_'.join(['reward_3', str(r.episode)]), 'png'])
-            rew_dir = os.path.join('new_plots', rew_fn)
-            plot_energy(r.episode_rewards, 'accumulated reward', rew_dir)
-            energy_fn = '.'.join(['_'.join(['final', 'energy_3', str(r.episode)]), 'png'])
-            energy_dir = os.path.join('new_plots', energy_fn)
-            plot_energy(env.final_energy, 'final energy', energy_dir)
+        # if r.episode % 50 == 0:
+        #     positions = env.get_positions()
+        #     pos_fn = '_'.join(['pos_3', str(r.episode)])
+        #     pos_dir = os.path.join('new_pos', pos_fn)
+        #     np.save(pos_dir, positions)
+        # if r.episode % 50 == 0:
+        #     agent_fn = '_'.join(['agent_3', str(r.episode)])
+        #     agent_path = os.path.join('new_agents', agent_fn)
+        #     r.agent.save_model(agent_path)
+        #     print("Saving agent to {}".format(agent_dir))
+        # if r.episode % 50 == 0:
+        #     rew_fn = '.'.join(['_'.join(['reward_3', str(r.episode)]), 'png'])
+        #     rew_dir = os.path.join('new_plots', rew_fn)
+        #     plot_energy(r.episode_rewards, 'accumulated reward', rew_dir)
+        #     energy_fn = '.'.join(['_'.join(['final', 'energy_3', str(r.episode)]), 'png'])
+        #     energy_dir = os.path.join('new_plots', energy_fn)
+        #     plot_energy(env.final_energy, 'final energy', energy_dir)
+        
         print("Finished episode {ep} after {ts} timesteps (reward: {reward})".
             format(ep=r.episode, ts=r.episode_timestep,reward=r.episode_rewards[-1]))
+
+        traj_dir = os.path.join('traj_files', 'seed_'+str(args.seed), str(r.episode))
+        if not os.path.exists(traj_dir):
+            os.makedirs(traj_dir)
+        env.save_traj(traj_dir)
+
+        fig_dir = os.path.join('atom_figs', 'seed_'+str(args.seed), str(r.episode))
+        if not os.path.exists(fig_dir):
+            os.makedirs(fig_dir)
+        env.save_fig(fig_dir)
+
+        model_dir = os.path.join('models', 'seed_'+str(args.seed))
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir)
+        model_fn = os.path.join(model_dir, str(r.episode))
+        r.agent.save_model(model_fn)
+        print("Model saved to {}".format(model_fn))
+
+        rew_dir = os.path.join('rew_figs', 'seed_'+str(args.seed))
+        if not os.path.exists(rew_dir):
+            os.makedirs(rew_dir)
+        rew_fn = 'rew_' + str(r.episode) + '.png'
+        rew_fn = os.path.join(rew_dir, rew_fn)
+        plot_energy(r.episode_rewards, 'accumulated reward', rew_fn)
+        energy_fn = 'energy_' + str(r.episode) + '.png'
+        energy_fn = os.path.join(rew_dir, energy_fn)
+        plot_energy(env.final_energy, 'final energy', energy_fn)
+
         return True
 
     runner.run(
-        # num_timesteps=args.timesteps,
         num_episodes=args.episodes,
         max_episode_timesteps=args.horizon,
         deterministic=args.deterministic,

@@ -1,10 +1,5 @@
 *.ipynb*
 /__pycache__
 /.vscode
-/agents
-/plots
-/pos
-/new_agents
-/new_plots
-/new_pos
-/pad_traj
+/previous
+*.traj 
