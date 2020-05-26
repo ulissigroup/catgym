@@ -1,7 +1,18 @@
 import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
+import numpy as np
 
+from ase.build import fcc111
+from ase.visualize import view
+from ase.optimize import BFGS
+from ase.calculators.emt import EMT
+from ase.constraints import FixAtoms
+from ase.optimize import BFGS
+from ase.optimize.bfgslinesearch import BFGSLineSearch
+from sella import Sella 
+import math
+import itertools
 
 MOVE_ACTION_NAMES = [
     'up', 
@@ -26,19 +37,24 @@ ACTION_LOOKUP = [
     'steepest_descent', 
     'steepest_ascent']
 
+ELEMENT_LATTICE_CONSTANTS = {'Ag':4.124,'Au':4.153,'Cu':3.626}
+
+
 class MultiComponentSurface(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, size=(2,2,4), 
+                 element_choices = {'Ag': 6, 'Au':5, 'Cu':5},
+                 permute_seed = 42):
 
-        self.initial_atoms = self._generate_slab()
+        self.initial_atoms = self._generate_slab(size, element_choices, permute_seed)
 
         #Mark the free atoms
         self.free_atoms = list(set(range(len(self.initial_atoms))) - 
             set(self.initial_atoms.constraints[0].get_indices()))
         
         #Define the possible actions        
-        self.action_space = spaces.Tuple((spaces.Discrete(len(ACTION_TYPE)),
+        self.action_space = spaces.Tuple((spaces.Discrete(len(ACTION_LOOKUP)),
                                           spaces.Discrete(len(self.free_atoms)),
                                           spaces.Discrete(len(MOVE_ACTION))))
         
@@ -135,9 +151,9 @@ class MultiComponentSurface(gym.Env):
     def _get_state(self):
         # helper function to get the current state space, which is just the position
         # of the free atoms as one long vector (should be improved)
-        return self.positions()[self.free_atoms].reshape((-1,1))
+        return self.atoms.positions[self.free_atoms].reshape((-1,1))
     
-    def _generate_slab(self):
+    def _generate_slab(self, size, element_choices, permute_seed):
         #generate a pseudo-random sequence of elements
         np.random.seed(permute_seed)
         num_atoms = math.prod(size)
@@ -145,7 +161,7 @@ class MultiComponentSurface(gym.Env):
         element_list = np.random.permutation(atom_ordering)
 
         #Use vergard's law to estimate the lattice constant
-        a = np.sum([element_lattice_constants[key]*element_choices[key]/num_atoms for key in element_choices])
+        a = np.sum([ELEMENT_LATTICE_CONSTANTS[key]*element_choices[key]/num_atoms for key in element_choices])
 
         #Generate a base FCC slab
         slab = fcc111('Al', size=size, a=a, periodic=True, vacuum=10.0)
