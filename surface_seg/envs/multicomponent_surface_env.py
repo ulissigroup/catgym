@@ -112,7 +112,7 @@ class MultiComponentSurface(gym.Env):
     def render(self, mode='rgb_array'):
         
         if mode=='rgb_array':
-            return render_image(self.atoms.repeat((2,2,1)), rotation='48x,-51y,-144z')
+            return render_image(self.atoms.repeat((2,2,1)), rotation='48x,-51y,-144z', bbox=(-10,0,10,20))
 
     def close(self):
         return
