@@ -62,7 +62,7 @@ class MultiComponentSurface(gym.Env):
                                           spaces.Discrete(len(MOVE_ACTION))))
         
         self.observation_space = spaces.Box(low=0, 
-                                            high=5,
+                                            high=1,
                                            shape =  self._get_state().shape) # ZU: not sure what min/max are here; should come from atoms cell?
         
         return
@@ -141,11 +141,13 @@ class MultiComponentSurface(gym.Env):
     def _steepest_descent(self, atom_idx):
         force = self.atoms.get_forces()[self.free_atoms,:]
         move = -0.1*force[atom_idx]
+        self.atoms.positions[self.free_atoms[atom_index]] += move
         return 
     
     def _steepest_ascent(self, atom_idx):
         force = self.atoms.get_forces()[self.free_atoms,:]
         move = 0.1*force[atom_idx]
+        self.atoms.positions[self.free_atoms[atom_index]] += move
         return 
     
     def _move_atom(self, atom_index, move_index):
@@ -156,7 +158,7 @@ class MultiComponentSurface(gym.Env):
     def _get_state(self):
         # helper function to get the current state space, which is just the position
         # of the free atoms as one long vector (should be improved)
-        return self.atoms.positions[self.free_atoms]
+        return self.atoms.get_scaled_positions()[self.free_atoms]
     
     def _generate_slab(self, size, element_choices, permute_seed):
         #generate a pseudo-random sequence of elements
