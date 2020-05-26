@@ -17,5 +17,5 @@ setup(name='drl_surface_seg',
       packages=find_packages(),
       scripts=[],
       include_package_data=False,
-      install_requires=['tensorforce','ase>3.19.1','sella @ git+https://github.com/zadorlab/sella.git'],
-      long_description='''Module for generating random catalyst adsorption configurations for high-throughput dataset generation.''',)
+      install_requires=['tensorforce','ase>=3.19.1','numpy','matplotlib','sella @ git+https://github.com/zadorlab/sella.git'],
+      long_description='''Module for implementing DRL in surface segregation studies.''',)
