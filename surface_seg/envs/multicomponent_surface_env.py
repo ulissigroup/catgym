@@ -73,8 +73,8 @@ class MultiComponentSurface(gym.Env):
         action_type = ACTION_LOOKUP[action[0]]
         
         if action_type=='move':
-            atom_index = ACTION_LOOKUP[action[1]]
-            move_index = ACTION_LOOKUP[action[2]]
+            atom_index = action[1]
+            move_index = action[2]
             self._move_atom(atom_index, move_index)
             
         elif action_type=='minimize':
