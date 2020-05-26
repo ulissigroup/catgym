@@ -19,9 +19,8 @@ from ase.io.trajectory import Trajectory
 from ase.io import read, write
 
 from sella import Sella
-# from sella import MinModeAtoms, optimize
-# from sella import optimize
-# from ase.dimer import MinModeAtoms
+import math
+import itertools
 
 
 ACTION_NAMES = [
@@ -45,60 +44,42 @@ ACTION_DIRECTION = [
     np.array([ 0,0., 0]),
 ]
 
+element_lattice_constants = {'Ag':4.124,'Au':4.153,'Cu':3.626}
 
-class Surface():
-    def __init__(self):
-        # self.atom_list = []
-        # with open('permutation_0.txt', 'r') as filehandle:  
-        #     self.atom_list = [int(n) for n in filehandle.readlines()]
-        # elements = ['Al', 'Ni', 'Cu', 'Pt']
-        # mole_frac = [16, 16, 16, 16]
+class MultiComponentSurface():
+    def __init__(self, size=(2,2,4), 
+                 permute_seed=42, 
+                 element_choices = {'Ag': 6, 'Au':5, 'Cu':5}):
 
-        # composition = [elements[0]] * mole_frac[0] + \
-        #     [elements[1]] * mole_frac[1] + \
-        #     [elements[2]] * mole_frac[2] + \
-        #     [elements[3]] * mole_frac[3]
-
-        # # Lattice Constants
-        # Al = 4.067
-        # Ni = 3.512
-        # Cu = 3.626
-        # Pt = 3.977
-
-        # a = 0.25 * Al + 0.25 * Ni + 0.25 * Cu + 0.25 * Pt
-
-        self.atom_list = []
-        with open('../../permutation.txt', 'r') as filehandle:  
-            self.atom_list = [int(n) for n in filehandle.readlines()]
-        elements = ['Ag', 'Au', 'Cu']
-        mole_frac = [6, 5, 5]        
-        composition = [elements[0]] * mole_frac[0] + [elements[1]] * mole_frac[1] + [elements[2]] * mole_frac[2]
-
-        # Lattice Constants
-        Ag = 4.124
-        Au = 4.153
-        Cu = 3.626
-
-        a = 0.33 * Ag + 0.33 * Au + 0.33 * Cu
-
-        # slab = fcc111('Al', size=(4, 4, 4), a=a, periodic=True, vacuum=10.0)
-        slab = fcc111('Al', size = (2, 2, 4), a=a, periodic=True, vacuum=10.0)
-        for i in range(len(composition)):
-            slab[self.atom_list[i]].symbol = composition[i]
+        #generate a pseudo-random sequence of elements
+        np.random.seed(permute_seed)
+        num_atoms = math.prod(size)
+        atom_ordering = list(itertools.chain.from_iterable([[key]*element_choices[key] for key in element_choices]))
+        element_list = np.random.permutation(atom_ordering)
+                             
+        #Use vergard's law to estimate the lattice constant
+        a = np.sum([element_lattice_constants[key]*element_choices[key]/num_atoms for key in element_choices])
+        
+        #Generate a base FCC slab
+        slab = fcc111('Al', size=size, a=a, periodic=True, vacuum=10.0)
+        slab.set_chemical_symbols(element_list)
+        
+        #Set the calculator
         slab.set_calculator(EMT())
 
-        # c =  FixAtoms(indices=[atom.index for atom in slab if atom.index < 32])  #Fix two layers
+        #Constrain the bottom two layers
         c =  FixAtoms(indices=[atom.index for atom in slab if atom.position[2] < np.mean(slab.positions[:,2])])  #Fix two layers
         slab.set_constraint(c)
-        
+
+        #Mark the free atoms
         self.atoms = slab
         self.free_atoms = list(set(range(len(self.atoms))) - 
             set(self.atoms.constraints[0].get_indices()))
         
+        #Do a quick minimization to relax the structure
         dyn = BFGSLineSearch(atoms=self.atoms, logfile=None)
         dyn.run(0.1)
 
-        # print(self.free_atoms)
     
     def calculate_energy(self):
         return self.atoms.get_potential_energy()
@@ -134,8 +115,8 @@ class Surface():
 
 
 class SurfaceEnv(Environment):
-    def __init__(self, max_timesteps):
-        self._lattice = Surface()
+    def __init__(self, max_timesteps, surface=MultiComponentSurface()):
+        self._lattice =surface
         self.curr_energy = self.get_energy()
         self.initial_energy = self.get_energy()
         self.max_timesteps = max_timesteps
