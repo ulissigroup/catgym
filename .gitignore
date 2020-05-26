@@ -3,3 +3,10 @@
 /previous
 *.traj 
 *.png
+*.pyc	
+nohup.out
+*.meta
+*.index
+*cpython*
+.ipynb_checkpoints
+output.log
