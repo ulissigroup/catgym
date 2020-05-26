@@ -84,11 +84,11 @@ class MultiComponentSurface(gym.Env):
             self._transition_state_search()
             
         elif action_type=='steepest_descent':
-            atom_index = ACTION_LOOKUP[action[1]]
+            atom_index = action[1]
             self._steepest_descent(atom_index)
             
         elif action_type=='steepest_ascent':
-            atom_index = ACTION_LOOKUP[action[1]]
+            atom_index = action[1]
             self._steepest_ascent(atom_index)
             
         else:
