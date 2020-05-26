@@ -53,13 +53,17 @@ class MultiComponentSurface(gym.Env):
         self.free_atoms = list(set(range(len(self.initial_atoms))) - 
             set(self.initial_atoms.constraints[0].get_indices()))
         
+        #Set up the initial atoms
+        self.reset()
+            
         #Define the possible actions        
         self.action_space = spaces.Tuple((spaces.Discrete(len(ACTION_LOOKUP)),
                                           spaces.Discrete(len(self.free_atoms)),
                                           spaces.Discrete(len(MOVE_ACTION))))
         
-        #Set up the initial atoms
-        self.reset()
+        self.observation_space = spaces.Box(low=0, 
+                                            high=5,
+                                           shape =  self._get_state().shape) # ZU: not sure what min/max are here; should come from atoms cell?
         
         return
 
@@ -151,7 +155,7 @@ class MultiComponentSurface(gym.Env):
     def _get_state(self):
         # helper function to get the current state space, which is just the position
         # of the free atoms as one long vector (should be improved)
-        return self.atoms.positions[self.free_atoms].reshape((-1,1))
+        return self.atoms.positions[self.free_atoms]
     
     def _generate_slab(self, size, element_choices, permute_seed):
         #generate a pseudo-random sequence of elements
