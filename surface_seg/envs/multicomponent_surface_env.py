@@ -33,7 +33,7 @@ MOVE_ACTION = [
 ACTION_LOOKUP = [
     'move',
     'minimize',
-    'transition_state_search',
+#     'transition_state_search',
     'steepest_descent', 
     'steepest_ascent']
 
@@ -77,17 +77,17 @@ class MultiComponentSurface(gym.Env):
             move_index = ACTION_LOOKUP[action[2]]
             self._move_atom(atom_index, move_index)
             
-        elif self.action_type=='minimize':
+        elif action_type=='minimize':
             self._minimize()
 
-        elif self.action_type=='transition_state_search':
+        elif action_type=='transition_state_search':
             self._transition_state_search()
             
-        elif self.action_type=='steepest_descent':
+        elif action_type=='steepest_descent':
             atom_index = ACTION_LOOKUP[action[1]]
             self._steepest_descent(atom_index)
             
-        elif self.action_type=='steepest_ascent':
+        elif action_type=='steepest_ascent':
             atom_index = ACTION_LOOKUP[action[1]]
             self._steepest_ascent(atom_index)
             
@@ -98,11 +98,12 @@ class MultiComponentSurface(gym.Env):
         reward = self._get_reward()
         episode_over=False
         
-        return self._get_state()
+        return observation, reward, episode_over, {}
 
     #open AI gym API requirement
     def reset(self):
         self.atoms = self.initial_atoms.copy()
+        self.atoms.set_calculator(EMT())
         return self._get_state()
     
     #open AI gym API requirement
@@ -124,7 +125,7 @@ class MultiComponentSurface(gym.Env):
     
     def _get_reward(self):
         # update this
-        return atoms.get_potential_energy()
+        return -self.atoms.get_potential_energy()
     
     def _transition_state_search(self):
         fix = self.atoms.constraints[0].get_indices()
@@ -142,7 +143,7 @@ class MultiComponentSurface(gym.Env):
         move = -0.1*force[atom_idx]
         return 
     
-    def _steepest_ascent(self):
+    def _steepest_ascent(self, atom_idx):
         force = self.atoms.get_forces()[self.free_atoms,:]
         move = 0.1*force[atom_idx]
         return 
