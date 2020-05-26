@@ -11,6 +11,8 @@ from ase.optimize.bfgslinesearch import BFGSLineSearch
 from sella import Sella
 import math
 import itertools
+from .atoms_png_render import render_image
+
 
 MOVE_ACTION_NAMES = [
     'up',
@@ -39,7 +41,7 @@ ELEMENT_LATTICE_CONSTANTS = {'Ag': 4.124, 'Au': 4.153, 'Cu': 3.626}
 
 
 class MultiComponentSurface(gym.Env):
-    metadata = {'render.modes': ['human']}
+    metadata = {'render.modes': ['rgb_array']}
 
     def __init__(self, size=(2, 2, 4),
                  element_choices={'Ag': 6, 'Au': 5, 'Cu': 5},
@@ -63,12 +65,11 @@ class MultiComponentSurface(gym.Env):
 
         self.observation_space = spaces.Box(low=0,
                                             high=1,
-                                            shape=self._get_state().shape)  # ZU: not sure what min/max are here; should 
-come from atoms cell?
+                                            shape=self._get_state().shape)  
 
         return
 
-    # open AI gym API requirement
+    # open AI gym API requirements
     def step(self, action):
 
         action_type = ACTION_LOOKUP[action[0]]
@@ -95,29 +96,28 @@ come from atoms cell?
         else:
             raise Exception('I am not sure what action you mean!')
 
+        self.atoms.wrap()
+        
         observation = self._get_state()
         reward = self._get_reward()
         episode_over = False
 
         return observation, reward, episode_over, {}
 
-    # open AI gym API requirement
     def reset(self):
         self.atoms = self.initial_atoms.copy()
         self.atoms.set_calculator(EMT())
         return self._get_state()
 
-    # open AI gym API requirement
-    def render(self, mode='human'):
-        # Fill in with ASE visualization
-        return
+    def render(self, mode='rgb_array'):
+        
+        if mode=='rgb_array':
+            return render_image(self.atoms.repeat((2,2,1)), rotation='48x,-51y,-144z')
 
-    # open AI gym API requirement
     def close(self):
         return
 
     # Helper functions for above
-
     def _minimize(self):
         dyn = BFGSLineSearch(atoms=self.atoms, logfile=None)
         dyn.run(0.1)
@@ -138,15 +138,15 @@ come from atoms cell?
 
         return
 
-    def _steepest_descent(self, atom_idx):
+    def _steepest_descent(self, atom_index):
         force = self.atoms.get_forces()[self.free_atoms, :]
-        move = -0.1*force[atom_idx]
+        move = -0.1*force[atom_index]
         self.atoms.positions[self.free_atoms[atom_index]] += move
         return
 
-    def _steepest_ascent(self, atom_idx):
+    def _steepest_ascent(self, atom_index):
         force = self.atoms.get_forces()[self.free_atoms, :]
-        move = 0.1*force[atom_idx]
+        move = 0.1*force[atom_index]
         self.atoms.positions[self.free_atoms[atom_index]] += move
         return
 
