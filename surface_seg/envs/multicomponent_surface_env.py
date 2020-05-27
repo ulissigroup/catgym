@@ -22,18 +22,18 @@ MOVE_ACTION_NAMES = [
     'forward',
     'backward']
 
-MOVE_ACTION = [
+MOVE_ACTION = np.stack([
     np.array([0, 0, 1]),
     np.array([0, 0, -1]),
     np.array([1, 0, 0]),
     np.array([-1, 0, 0]),
     np.array([0, 1, 0]),
-    np.array([0, -1, 0])]
+    np.array([0, -1, 0])])
 
 ACTION_LOOKUP = [
     'move',
     'minimize',
-    #     'transition_state_search',
+#     'transition_state_search',
     'steepest_descent',
     'steepest_ascent']
 
@@ -45,8 +45,11 @@ class MultiComponentSurface(gym.Env):
 
     def __init__(self, size=(2, 2, 4),
                  element_choices={'Ag': 6, 'Au': 5, 'Cu': 5},
-                 permute_seed=42):
+                 permute_seed=42,
+                step_size=0.1):
 
+        self.step_size=step_size
+        
         self.initial_atoms = self._generate_slab(
             size, element_choices, permute_seed)
 
@@ -99,19 +102,29 @@ class MultiComponentSurface(gym.Env):
         self.atoms.wrap()
         
         observation = self._get_state()
-        reward = self._get_reward()
-        episode_over = False
+        
+        relative_energy = self.atoms.get_potential_energy() - self.initial_energy
 
+        reward = self._get_reward(relative_energy)
+        
+        if relative_energy > 2:
+            episode_over = True
+        else:
+            episode_over = False
+    
         return observation, reward, episode_over, {}
 
     def reset(self):
         self.atoms = self.initial_atoms.copy()
         self.atoms.set_calculator(EMT())
+        self.initial_energy = self.atoms.get_potential_energy()
+        self.highest_energy = 0.0
         return self._get_state()
 
     def render(self, mode='rgb_array'):
         
         if mode=='rgb_array':
+            # return an rgb array representing the picture of the atoms
             return render_image(self.atoms.repeat((2,2,1)), rotation='48x,-51y,-144z', bbox=(-10,0,10,20))
 
     def close(self):
@@ -123,9 +136,19 @@ class MultiComponentSurface(gym.Env):
         dyn.run(0.1)
         return
 
-    def _get_reward(self):
-        # update this
-        return -self.atoms.get_potential_energy()
+    def _get_reward(self, relative_energy):        
+        reward = 0
+        
+        if relative_energy < 0:
+            # we found a better minima! great!
+            reward += -relative_energy
+        
+        if relative_energy > self.highest_energy:
+            # we just went over a higher transition state! bad!
+            reward += -(relative_energy - self.highest_energy)
+            self.highest_energy = relative_energy
+            
+        return reward
 
     def _transition_state_search(self):
         fix = self.atoms.constraints[0].get_indices()
@@ -134,26 +157,26 @@ class MultiComponentSurface(gym.Env):
                     constraints=dict(fix=fix),  # Your constraints
                     trajectory='saddle.traj',  # Optional trajectory
                     )
-        dyn.run(1e-2, steps=100)
+        dyn.run(1e-2, steps=10)
 
         return
 
     def _steepest_descent(self, atom_index):
-        force = self.atoms.get_forces()[self.free_atoms, :]
-        move = -0.1*force[atom_index]
+        force = self.atoms.get_forces()[self.free_atoms[atom_index], :]
+        move = -self.step_size*force/np.linalg.norm(force)
         self.atoms.positions[self.free_atoms[atom_index]] += move
         return
 
     def _steepest_ascent(self, atom_index):
-        force = self.atoms.get_forces()[self.free_atoms, :]
-        move = 0.1*force[atom_index]
+        force = self.atoms.get_forces()[self.free_atoms[atom_index], :]
+        move = self.step_size*force/np.linalg.norm(force)
         self.atoms.positions[self.free_atoms[atom_index]] += move
         return
 
     def _move_atom(self, atom_index, move_index):
         # Helper function to move an atom
         self.atoms.positions[self.free_atoms[atom_index]
-                             ] += MOVE_ACTION[move_index]
+                             ] += MOVE_ACTION[move_index]*self.step_size
         return
 
     def _get_state(self):
