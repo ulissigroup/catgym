@@ -22,5 +22,6 @@ setup(name='drl_surface_seg',
 			'ase>=3.19.1',
 			'numpy',
 			'matplotlib',
+			'asap3',
 			'sella @ git+https://github.com/zadorlab/sella.git'],
       long_description='''Module for implementing DRL in surface segregation studies.''',)

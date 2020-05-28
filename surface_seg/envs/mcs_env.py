@@ -5,7 +5,8 @@ import numpy as np
 
 from ase.build import fcc111
 from ase.visualize import view
-from ase.calculators.emt import EMT
+# from ase.calculators.emt import EMT
+from asap3 import EMT
 from ase.constraints import FixAtoms
 from ase.optimize.bfgslinesearch import BFGSLineSearch
 from sella import Sella
@@ -24,10 +25,11 @@ MOVE_ACTION_NAMES = [
 
 ACTION_LOOKUP = [
     'move',
-    'minimize',
+#     'minimize',
 #     'transition_state_search',
     'steepest_descent',
-    'steepest_ascent']
+    'steepest_ascent'
+]
 
 ELEMENT_LATTICE_CONSTANTS = {'Ag': 4.124, 'Au': 4.153, 'Cu': 3.626}
 
@@ -38,7 +40,7 @@ class MCSEnv(gym.Env):
     def __init__(self, size=(2, 2, 4),
                  element_choices={'Ag': 6, 'Au': 5, 'Cu': 5},
                  permute_seed=42,
-                 step_size=0.1):
+                 step_size=0.2):
 
         self.step_size=step_size
         
@@ -49,9 +51,6 @@ class MCSEnv(gym.Env):
         self.free_atoms = list(set(range(len(self.initial_atoms))) -
                                set(self.initial_atoms.constraints[0].get_indices()))
 
-        # Set up the initial atoms
-        self.reset()
-
         # Define the possible actions
         self.action_space = spaces.Dict({'action_type':spaces.Discrete(len(ACTION_LOOKUP)),
                                          'atom_selection': spaces.Discrete(
@@ -60,14 +59,17 @@ class MCSEnv(gym.Env):
                                                                high=self.step_size,
                                                                shape=(1,3))})
         
+        #Define the observation space
+        self.observation_space = self._get_observation_space()
 
-        self.observation_space = self._get_state_space()
-
+        # Set up the initial atoms
+        self.reset()
+        
         return
 
     # open AI gym API requirements
     def step(self, action):
-
+        
         action_type = ACTION_LOOKUP[action['action_type']]
 
         if action_type == 'move':
@@ -91,16 +93,16 @@ class MCSEnv(gym.Env):
 
         relative_energy = self._get_relative_energy()
 
-        observation = self._get_state()
+        observation = self._get_observation()
 
         reward = self._get_reward(relative_energy)
-        
+
         #Stop if relative energy gets too high
-        if relative_energy > 2.0:
+        if relative_energy > self.observation_space['energy'].high[0]:
             episode_over = True
         else:
             episode_over = False
-    
+
         return observation, reward, episode_over, {}
 
     def reset(self):
@@ -108,7 +110,7 @@ class MCSEnv(gym.Env):
         self.atoms.set_calculator(EMT())
         self.initial_energy = self.atoms.get_potential_energy()
         self.highest_energy = 0.0
-        return self._get_state()
+        return self._get_observation()
 
     def render(self, mode='rgb_array'):
         
@@ -130,9 +132,9 @@ class MCSEnv(gym.Env):
     def _get_reward(self, relative_energy):        
         reward = 0
         
-        if relative_energy < 0:
+#         if relative_energy < 0:
             # we found a better minima! great!
-            reward += -relative_energy
+        reward += -relative_energy
         
         if relative_energy > self.highest_energy:
             # we just went over a higher transition state! bad!
@@ -157,13 +159,13 @@ class MCSEnv(gym.Env):
 
     def _steepest_descent(self, atom_index):
         force = self.atoms.get_forces()[self.free_atoms[atom_index], :]
-        move = -self.step_size*force/np.linalg.norm(force)
+        move = -self.step_size*force
         self.atoms.positions[self.free_atoms[atom_index]] += move
         return
 
     def _steepest_ascent(self, atom_index):
         force = self.atoms.get_forces()[self.free_atoms[atom_index], :]
-        move = self.step_size*force/np.linalg.norm(force)
+        move = self.step_size*force
         self.atoms.positions[self.free_atoms[atom_index]] += move
         return
 
@@ -173,23 +175,33 @@ class MCSEnv(gym.Env):
                         += movement.reshape((3,))
         return
 
-    def _get_state(self):
-        # helper function to get the current state space, which is just the position
+    def _get_observation(self):
+        # helper function to get the current observation, which is just the position
         # of the free atoms as one long vector (should be improved)
+        
+        #Clip the forces to the state space limits to avoid really bad forces
+        forces = self.atoms.get_forces()[self.free_atoms, :]
+        forces = np.clip(forces, -2,2)
+        
+        #Clip the energy to the state space limits to avoid really bad energies
+        relative_energy = self._get_relative_energy()
+        if relative_energy > self.observation_space['energy'].high[0]:
+            relative_energy = self.observation_space['energy'].high[0]
+        
         return {'positions': self.atoms.get_scaled_positions()[self.free_atoms],
-                'energy':np.array([self._get_relative_energy()]),
-               'forces':self.atoms.get_forces()[self.free_atoms, :]}
+                'energy':np.array([relative_energy]),
+                'forces':forces}
     
-    def _get_state_space(self):
+    def _get_observation_space(self):
         return spaces.Dict({'positions': spaces.Box(low=0,
                                             high=1,
-                                            shape=self.atoms.get_scaled_positions()[self.free_atoms].shape),
-                                               'energy': spaces.Box(low=-2,
-                                            high=2,
+                                            shape=(len(self.free_atoms),3)),
+                            'energy': spaces.Box(low=-2,
+                                            high=10,
                                             shape=(1,)),
                            'forces': spaces.Box(low=-2,
                                             high=2,
-                                            shape=self.atoms.get_scaled_positions()[self.free_atoms].shape)})
+                                            shape=(len(self.free_atoms),3))})
 
 
     def _generate_slab(self, size, element_choices, permute_seed):
