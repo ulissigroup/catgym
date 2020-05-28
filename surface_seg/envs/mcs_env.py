@@ -82,7 +82,7 @@ class MCSEnv(gym.Env):
         
         if action_type == 'move':
             current_energy = self._get_relative_energy()
-            self._monte_carlo_move_atom(action['atom_selection'], 
+            self._move_atom_line_search(action['atom_selection'], 
                             action['movement'])
             
         elif action_type == 'minimize_and_score':
