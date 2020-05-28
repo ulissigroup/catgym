@@ -95,7 +95,7 @@ class MCSEnv_TRPO(MCSEnv):
 
         relative_energy = self._get_relative_energy()
 
-        observation = self._get_state()
+        observation = self._get_state() # Need to be np.array
 
         reward = self._get_reward(relative_energy)
         
@@ -126,7 +126,7 @@ class MCSEnv_TRPO(MCSEnv):
         observation_positions = observation['positions'].flatten()
         observation_forces = observation['forces'].flatten()
         
-        return np.hstack([observation_energy, observation_positions, observation_forces])
+        return np.hstack([observation_energy, observation_positions, observation_forces]) # Need to be np.array
         
     def _get_state_space(self):
         observation = self._get_state_dict()
