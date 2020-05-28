@@ -25,10 +25,10 @@ MOVE_ACTION_NAMES = [
 
 ACTION_LOOKUP = [
     'move',
-#     'minimize',
+    'minimize_and_score',
 #     'transition_state_search',
-    'steepest_descent',
-    'steepest_ascent'
+#     'steepest_descent',
+#     'steepest_ascent'
 ]
 
 ELEMENT_LATTICE_CONSTANTS = {'Ag': 4.124, 'Au': 4.153, 'Cu': 3.626}
@@ -40,7 +40,9 @@ class MCSEnv(gym.Env):
     def __init__(self, size=(2, 2, 4),
                  element_choices={'Ag': 6, 'Au': 5, 'Cu': 5},
                  permute_seed=42,
-                 step_size=0.2):
+                 step_size=0.4,
+                 temperature = 1200):
+
 
         self.step_size=step_size
         
@@ -51,6 +53,10 @@ class MCSEnv(gym.Env):
         self.free_atoms = list(set(range(len(self.initial_atoms))) -
                                set(self.initial_atoms.constraints[0].get_indices()))
 
+        boltzmann_constant = 8.617e-5 #eV/K
+        self.thermal_energy=temperature*boltzmann_constant*len(self.free_atoms)
+        
+        
         # Define the possible actions
         self.action_space = spaces.Dict({'action_type':spaces.Discrete(len(ACTION_LOOKUP)),
                                          'atom_selection': spaces.Discrete(
@@ -71,13 +77,17 @@ class MCSEnv(gym.Env):
     def step(self, action):
         
         action_type = ACTION_LOOKUP[action['action_type']]
-
+        
+        reward = 0
+        
         if action_type == 'move':
-            self._move_atom(action['atom_selection'], 
+            current_energy = self._get_relative_energy()
+            self._monte_carlo_move_atom(action['atom_selection'], 
                             action['movement'])
-
-        elif action_type == 'minimize':
-            self._minimize()
+            
+        elif action_type == 'minimize_and_score':
+            #This action tries to minimize
+            self._minimize_and_score()
 
         elif action_type == 'transition_state_search':
             self._transition_state_search()
@@ -95,13 +105,16 @@ class MCSEnv(gym.Env):
 
         observation = self._get_observation()
 
-        reward = self._get_reward(relative_energy)
+        reward += self._get_reward(relative_energy)
 
-        #Stop if relative energy gets too high
-        if relative_energy > self.observation_space['energy'].high[0]:
-            episode_over = True
-        else:
-            episode_over = False
+        self.atoms.wrap()
+#         Stop if relative energy gets too high
+#         if relative_energy > self.observation_space['energy'].high[0]:
+#             episode_over = True
+#         else:
+#             episode_over = False
+            
+        episode_over=False
 
         return observation, reward, episode_over, {}
 
@@ -110,6 +123,8 @@ class MCSEnv(gym.Env):
         self.atoms.set_calculator(EMT())
         self.initial_energy = self.atoms.get_potential_energy()
         self.highest_energy = 0.0
+        self.found_minima_positions = [self.atoms.positions[self.free_atoms,:]]
+        self.found_minima_energies = [self.initial_energy]
         return self._get_observation()
 
     def render(self, mode='rgb_array'):
@@ -126,16 +141,50 @@ class MCSEnv(gym.Env):
     # Helper functions for above
     def _minimize(self):
         dyn = BFGSLineSearch(atoms=self.atoms, logfile=None)
-        dyn.run(0.1)
+        dyn.run(0.03)
         return
 
+    def _minimize_and_score(self):
+
+        #Get the initial atom positions
+        initial_positions = self.atoms.positions[self.free_atoms,:].copy()
+            
+        # Minimize and find the new position/energy
+        self._minimize()
+        current_positions = self.atoms.positions[self.free_atoms,:].copy()
+        current_energy = self._get_relative_energy()
+        
+        #Get the distance from the new minima to every other found minima
+        distances = [np.linalg.norm(current_positions-positions) for positions in self.found_minima_positions]
+        energy_differences = np.abs(current_energy-np.array(self.found_minima_energies))
+        
+        #If the distance is non-trivial, add it to the list and score it
+        if np.min(distances)>1e-2 and np.min(energy_differences)>0.01:
+            print('found a new local minima! distance=%1.2f w energy %1.2f'%(np.min(distances), current_energy))
+            self.found_minima_positions.append(current_positions)
+            self.found_minima_energies.append(current_energy)
+            reward=100-current_energy*10+10*np.exp(-np.min(distances))
+            
+        #otherwise, reset the atoms positions since the minimization didn't do anything interesting
+        else:
+            self.atoms.positions[self.free_atoms,:]=initial_positions
+            reward = 0 
+      
+        return reward
+    
     def _get_reward(self, relative_energy):        
         reward = 0
         
 #         if relative_energy < 0:
             # we found a better minima! great!
-        reward += -relative_energy
+    
+        #Give rewards for moving, but reduce the reward for large energies
+        thermal_ratio=relative_energy/self.thermal_energy
+        if thermal_ratio>2:
+            thermal_ratio = 2
+        reward += 1-np.exp(thermal_ratio)
         
+        #Add a reward based on the current TS
         if relative_energy > self.highest_energy:
             # we just went over a higher transition state! bad!
             reward += -(relative_energy - self.highest_energy)
@@ -173,6 +222,41 @@ class MCSEnv(gym.Env):
         # Helper function to move an atom
         self.atoms.positions[self.free_atoms[atom_index]] \
                         += movement.reshape((3,))
+        return
+    
+    def _move_atom_line_search(self, atom_index, movement, reasonable_step_energy = 0.5):
+        #like move_atom, but do a line search so that we don't take too large of a step
+        
+        #Get the initial position/energy of the atom in question
+        initial_energy = self._get_relative_energy()
+        initial_position = self.atoms.positions[self.free_atoms[atom_index],:].copy()
+                                                 
+        #Make sure the specified movement is a 3x1 vector
+        movement = movement.reshape((3,))
+        
+        #Get the force on the atom
+        atom_force = self.atoms.get_forces()[self.free_atoms[atom_index],:]
+        
+        # estimate the energy associated with the trial move
+        estimated_move_energy = np.abs(np.dot(atom_force,movement))
+        
+        #scale the movement 
+        if estimated_move_energy>reasonable_step_energy:
+            trial_movement = movement*reasonable_step_energy/estimated_move_energy
+        else:
+            trial_movement = movement
+        
+        #When making the move, scale the step down so that it is actually less than the reasonable
+        # step energy specified above
+        
+        trial_movement_energy = 1.0
+        while trial_movement_energy>reasonable_step_energy:
+            self.atoms.positions[self.free_atoms[atom_index],:] = initial_position + trial_movement
+            
+            #reduce the trial_movement by a factor of 2 to find a more reasonable step
+            trial_movement_energy = np.abs(self._get_relative_energy()-initial_energy)
+            trial_movement /= 2
+            
         return
 
     def _get_observation(self):
