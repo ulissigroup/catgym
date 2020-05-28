@@ -87,7 +87,7 @@ class MCSEnv(gym.Env):
             
         elif action_type == 'minimize_and_score':
             #This action tries to minimize
-            self._minimize_and_score()
+            reward+=self._minimize_and_score()
 
         elif action_type == 'transition_state_search':
             self._transition_state_search()
@@ -163,7 +163,7 @@ class MCSEnv(gym.Env):
             print('found a new local minima! distance=%1.2f w energy %1.2f'%(np.min(distances), current_energy))
             self.found_minima_positions.append(current_positions)
             self.found_minima_energies.append(current_energy)
-            reward=100-current_energy*10+10*np.exp(-np.min(distances))
+            reward=1000-current_energy*100+100*np.exp(-np.min(distances))
             
         #otherwise, reset the atoms positions since the minimization didn't do anything interesting
         else:
