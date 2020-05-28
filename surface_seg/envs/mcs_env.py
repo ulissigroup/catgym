@@ -12,8 +12,11 @@ from ase.optimize.bfgslinesearch import BFGSLineSearch
 from sella import Sella
 import math
 import itertools
-from .atoms_png_render import render_image
 
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+from ase.visualize.plot import plot_atoms
 
 MOVE_ACTION_NAMES = [
     'up',
@@ -26,7 +29,7 @@ MOVE_ACTION_NAMES = [
 ACTION_LOOKUP = [
     'move',
     'minimize_and_score',
-#     'transition_state_search',
+    'transition_state_search',
 #     'steepest_descent',
 #     'steepest_ascent'
 ]
@@ -41,7 +44,7 @@ class MCSEnv(gym.Env):
                  element_choices={'Ag': 6, 'Au': 5, 'Cu': 5},
                  permute_seed=42,
                  step_size=0.4,
-                 temperature = 1200):
+                 temperature = 600):
 
 
         self.step_size=step_size
@@ -81,7 +84,7 @@ class MCSEnv(gym.Env):
         reward = 0
         
         if action_type == 'move':
-            current_energy = self._get_relative_energy()
+#             current_energy = self._get_relative_energy()
             self._move_atom_line_search(action['atom_selection'], 
                             action['movement'])
             
@@ -107,7 +110,8 @@ class MCSEnv(gym.Env):
 
         reward += self._get_reward(relative_energy)
 
-        self.atoms.wrap()
+        self._update_history(relative_energy)
+#         self.atoms.wrap()
 #         Stop if relative energy gets too high
 #         if relative_energy > self.observation_space['energy'].high[0]:
 #             episode_over = True
@@ -125,13 +129,45 @@ class MCSEnv(gym.Env):
         self.highest_energy = 0.0
         self.found_minima_positions = [self.atoms.positions[self.free_atoms,:]]
         self.found_minima_energies = [self.initial_energy]
+        self.energy_history = [(0, 0.)]
         return self._get_observation()
 
     def render(self, mode='rgb_array'):
         
         if mode=='rgb_array':
             # return an rgb array representing the picture of the atoms
-            return render_image(self.atoms.repeat((2,2,1)), rotation='48x,-51y,-144z', bbox=(-10,0,10,20))
+            
+            #Plot the atoms
+            fig, ax1 = plt.subplots()
+            plot_atoms(self.atoms.repeat((2,2,1)), 
+                       ax1, 
+                       rotation='48x,-51y,-144z', 
+                       show_unit_cell =0)
+            
+            ax1.set_ylim([0,20])
+            ax1.set_xlim([-2, 15])
+            ax1.axis('off')
+            ax2 = fig.add_axes([0.35, 0.85, 0.3, 0.1])
+            
+            #Add a subplot for the energy history overlay
+            energy_history = np.array(self.energy_history)
+            ax2.plot(energy_history[:,0],
+                     energy_history[:,1])
+            
+            #  ax2.set_xlim([0,200])
+            ax2.set_ylim([0,2])
+            ax2.set_ylabel('Energy [eV]')
+            
+            #Render the canvas to rgb values for the gym render
+            plt.draw()
+            renderer = fig.canvas.get_renderer()
+            x = renderer.buffer_rgba()
+            img_array = np.frombuffer(x, np.uint8).reshape(x.shape)
+            plt.close()
+            
+            #return the rendered array (but not the alpha channel)
+            return img_array[:,:,:3]
+            
         else:
             return
     
@@ -143,6 +179,10 @@ class MCSEnv(gym.Env):
         dyn = BFGSLineSearch(atoms=self.atoms, logfile=None)
         dyn.run(0.03)
         return
+    
+    def _update_history(self, relative_energy):
+        last_actions, last_energy = self.energy_history[-1]
+        self.energy_history.append((last_actions+1, relative_energy))
 
     def _minimize_and_score(self):
 
@@ -197,7 +237,8 @@ class MCSEnv(gym.Env):
 
         dyn = Sella(self.atoms,  # Your Atoms object
                     constraints=dict(fix=fix),  # Your constraints
-                    trajectory='saddle.traj',  # Optional trajectory
+                    trajectory='saddle.traj',  # Optional trajectory,
+                    logfile='sella.log'
                     )
         dyn.run(1e-2, steps=10)
 
@@ -265,7 +306,10 @@ class MCSEnv(gym.Env):
         
         #Clip the forces to the state space limits to avoid really bad forces
         forces = self.atoms.get_forces()[self.free_atoms, :]
-        forces = np.clip(forces, -2,2)
+        
+        forces = np.clip(forces, 
+                         self.observation_space['forces'].low[0,0],
+                         self.observation_space['forces'].low[0,0])
         
         #Clip the energy to the state space limits to avoid really bad energies
         relative_energy = self._get_relative_energy()
