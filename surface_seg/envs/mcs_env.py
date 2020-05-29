@@ -5,8 +5,8 @@ import numpy as np
 
 from ase.build import fcc111
 from ase.visualize import view
-# from ase.calculators.emt import EMT
-from asap3 import EMT
+from ase.calculators.emt import EMT
+# from asap3 import EMT
 from ase.constraints import FixAtoms
 from ase.optimize.bfgslinesearch import BFGSLineSearch
 from sella import Sella
@@ -17,6 +17,9 @@ import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from ase.visualize.plot import plot_atoms
+
+from amptorch.utils import make_amp_descriptors_simple_nn
+
 
 MOVE_ACTION_NAMES = [
     'up',
@@ -44,14 +47,23 @@ class MCSEnv(gym.Env):
                  element_choices={'Ag': 6, 'Au': 5, 'Cu': 5},
                  permute_seed=42,
                  step_size=0.4,
-                 temperature = 600):
+                 temperature = 600,
+                 fingerprints = False,
+                 Gs = None):
 
 
-        self.step_size=step_size
+        self.step_size = step_size
+
         
         self.initial_atoms = self._generate_slab(
             size, element_choices, permute_seed)
-
+        
+        # Make fingerprints
+        self.fingerprints = fingerprints
+        self.Gs = Gs
+        if self.fingerprints:
+            fps, self.fp_length = self._get_fingerprints(self.initial_atoms)
+        
         # Mark the free atoms
         self.free_atoms = list(set(range(len(self.initial_atoms))) -
                                set(self.initial_atoms.constraints[0].get_indices()))
@@ -316,20 +328,50 @@ class MCSEnv(gym.Env):
         if relative_energy > self.observation_space['energy'].high[0]:
             relative_energy = self.observation_space['energy'].high[0]
         
-        return {'positions': self.atoms.get_scaled_positions()[self.free_atoms],
-                'energy':np.array([relative_energy]),
-                'forces':forces}
+        if self.fingerprints:
+            fps, self.fp_length = self._get_fingerprints(self.initial_atoms)
+            
+            return {'fingerprints': fps[self.free_atoms], 
+                    'energy':np.array([relative_energy]),
+                    'forces':forces}      
+        
+        else:
+            return {'positions': self.atoms.get_scaled_positions()[self.free_atoms],
+                    'energy':np.array([relative_energy]),
+                    'forces':forces}
     
-    def _get_observation_space(self):
-        return spaces.Dict({'positions': spaces.Box(low=0,
-                                            high=1,
-                                            shape=(len(self.free_atoms),3)),
+    def _get_fingerprints(self, atoms):
+        elements = np.array(atoms.symbols)
+        _, idx = np.unique(elements, return_index=True)
+        elements = list(elements[np.sort(idx)])
+
+        fps, fp_primes = make_amp_descriptors_simple_nn([atoms], self.Gs, elements, cores=10, label='foo', save=False)
+        fps = np.array(np.array(fps)[:,1].tolist()) # N x fp_length
+        self.fp_length = len(fps[0])
+        return fps, self.fp_length
+    
+    def _get_observation_space(self):       
+        if self.fingerprints:
+            ##### define low and high for fingerprints
+            return spaces.Dict({'fingerprints': spaces.Box(low=-10,
+                                            high=10,
+                                            shape=(len(self.free_atoms), self.fp_length)),
                             'energy': spaces.Box(low=-2,
                                             high=10,
                                             shape=(1,)),
                            'forces': spaces.Box(low=-2,
                                             high=2,
                                             shape=(len(self.free_atoms),3))})
+        else:
+            return spaces.Dict({'positions': spaces.Box(low=0,
+                                                high=1,
+                                                shape=(len(self.free_atoms),3)),
+                                'energy': spaces.Box(low=-2,
+                                                high=10,
+                                                shape=(1,)),
+                               'forces': spaces.Box(low=-2,
+                                                high=2,
+                                                shape=(len(self.free_atoms),3))})
 
 
     def _generate_slab(self, size, element_choices, permute_seed):
