@@ -1,40 +1,28 @@
 import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
-import numpy as np
-
-from ase.build import fcc111
-from ase.visualize import view
-from ase.calculators.emt import EMT
-# from asap3 import EMT
-from ase.constraints import FixAtoms
-from ase.optimize.bfgslinesearch import BFGSLineSearch
-from sella import Sella
 import math
 import itertools
-
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
+import numpy as np
+from ase.build import fcc111
+from ase.visualize import view
+from ase.calculators.emt import EMT
+from ase.constraints import FixAtoms
+from ase.optimize.bfgslinesearch import BFGSLineSearch
 from ase.visualize.plot import plot_atoms
-
+from asap3 import EMT
+from sella import Sella
 from amptorch.utils import make_amp_descriptors_simple_nn
-
-
-MOVE_ACTION_NAMES = [
-    'up',
-    'down',
-    'left',
-    'right',
-    'forward',
-    'backward']
 
 ACTION_LOOKUP = [
     'move',
     'minimize_and_score',
     'transition_state_search',
-#     'steepest_descent',
-#     'steepest_ascent'
+    'steepest_descent',
+    'steepest_ascent'
 ]
 
 ELEMENT_LATTICE_CONSTANTS = {'Ag': 4.124, 'Au': 4.153, 'Cu': 3.626}
@@ -53,7 +41,6 @@ class MCSEnv(gym.Env):
 
 
         self.step_size = step_size
-
         
         self.initial_atoms = self._generate_slab(
             size, element_choices, permute_seed)
@@ -61,16 +48,13 @@ class MCSEnv(gym.Env):
         # Make fingerprints
         self.fingerprints = fingerprints
         self.Gs = Gs
-        if self.fingerprints:
-            fps, self.fp_length = self._get_fingerprints(self.initial_atoms)
-        
+
         # Mark the free atoms
         self.free_atoms = list(set(range(len(self.initial_atoms))) -
                                set(self.initial_atoms.constraints[0].get_indices()))
 
         boltzmann_constant = 8.617e-5 #eV/K
         self.thermal_energy=temperature*boltzmann_constant*len(self.free_atoms)
-        
         
         # Define the possible actions
         self.action_space = spaces.Dict({'action_type':spaces.Discrete(len(ACTION_LOOKUP)),
@@ -82,7 +66,7 @@ class MCSEnv(gym.Env):
         
         #Define the observation space
         self.observation_space = self._get_observation_space()
-
+        
         # Set up the initial atoms
         self.reset()
         
@@ -96,8 +80,7 @@ class MCSEnv(gym.Env):
         reward = 0
         
         if action_type == 'move':
-#             current_energy = self._get_relative_energy()
-            self._move_atom_line_search(action['atom_selection'], 
+            self._move_atom(action['atom_selection'], 
                             action['movement'])
             
         elif action_type == 'minimize_and_score':
@@ -116,13 +99,17 @@ class MCSEnv(gym.Env):
         else:
             raise Exception('I am not sure what action you mean!')
 
-        relative_energy = self._get_relative_energy()
-
+        #Get the new observation
         observation = self._get_observation()
 
+        #Add the reward for energy before/after 
+        relative_energy = self._get_relative_energy()
         reward += self._get_reward(relative_energy)
 
+        #Update the history for the rendering
         self._update_history(relative_energy)
+        
+        
 #         self.atoms.wrap()
 #         Stop if relative energy gets too high
 #         if relative_energy > self.observation_space['energy'].high[0]:
@@ -135,13 +122,20 @@ class MCSEnv(gym.Env):
         return observation, reward, episode_over, {}
 
     def reset(self):
+        
+        #Copy the initial atom and reset the calculator
         self.atoms = self.initial_atoms.copy()
         self.atoms.set_calculator(EMT())
         self.initial_energy = self.atoms.get_potential_energy()
         self.highest_energy = 0.0
+        
+        #Set the list of identified positions
         self.found_minima_positions = [self.atoms.positions[self.free_atoms,:]]
         self.found_minima_energies = [self.initial_energy]
+        
+        #Set the energy history
         self.energy_history = [(0, 0.)]
+        
         return self._get_observation()
 
     def render(self, mode='rgb_array'):
@@ -262,22 +256,22 @@ class MCSEnv(gym.Env):
     def _steepest_descent(self, atom_index):
         force = self.atoms.get_forces()[self.free_atoms[atom_index], :]
         move = -self.step_size*force
-        self.atoms.positions[self.free_atoms[atom_index]] += move
+        self._movement_line_search(atom_index, move)
         return
 
     def _steepest_ascent(self, atom_index):
         force = self.atoms.get_forces()[self.free_atoms[atom_index], :]
         move = self.step_size*force
-        self.atoms.positions[self.free_atoms[atom_index]] += move
+        self._movement_line_search(atom_index, move)
         return
 
     def _move_atom(self, atom_index, movement):
         # Helper function to move an atom
-        self.atoms.positions[self.free_atoms[atom_index]] \
-                        += movement.reshape((3,))
+        self._movement_line_search(atom_index, 
+                                   movement)
         return
     
-    def _move_atom_line_search(self, atom_index, movement, reasonable_step_energy = 0.5):
+    def _movement_line_search(self, atom_index, movement, reasonable_step_energy = 0.5):
         #like move_atom, but do a line search so that we don't take too large of a step
         
         #Get the initial position/energy of the atom in question
@@ -321,7 +315,7 @@ class MCSEnv(gym.Env):
         
         forces = np.clip(forces, 
                          self.observation_space['forces'].low[0,0],
-                         self.observation_space['forces'].low[0,0])
+                         self.observation_space['forces'].high[0,0])
         
         #Clip the energy to the state space limits to avoid really bad energies
         relative_energy = self._get_relative_energy()
@@ -341,6 +335,7 @@ class MCSEnv(gym.Env):
                     'forces':forces}
     
     def _get_fingerprints(self, atoms):
+        #get fingerprints from amptorch as better state space feature
         elements = np.array(atoms.symbols)
         _, idx = np.unique(elements, return_index=True)
         elements = list(elements[np.sort(idx)])
@@ -352,6 +347,9 @@ class MCSEnv(gym.Env):
     
     def _get_observation_space(self):       
         if self.fingerprints:
+
+            fps, self.fp_length = self._get_fingerprints(self.initial_atoms)
+        
             ##### define low and high for fingerprints
             return spaces.Dict({'fingerprints': spaces.Box(low=-10,
                                             high=10,
