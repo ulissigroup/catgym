@@ -21,21 +21,21 @@ ACTION_LOOKUP = [
     'move',
     'minimize_and_score',
     'transition_state_search',
-    'steepest_descent',
-    'steepest_ascent'
+#     'steepest_descent',
+#     'steepest_ascent'
 ]
 
-ELEMENT_LATTICE_CONSTANTS = {'Ag': 4.124, 'Au': 4.153, 'Cu': 3.626}
+ELEMENT_LATTICE_CONSTANTS = {'Au':4.065 , 'Pd': 3.859, 'Ni': 3.499}
 
 
 class MCSEnv(gym.Env):
     metadata = {'render.modes': ['rgb_array']}
 
     def __init__(self, size=(2, 2, 4),
-                 element_choices={'Ag': 6, 'Au': 5, 'Cu': 5},
+                 element_choices={'Ni': 6, 'Pd': 5, 'Au': 5},
                  permute_seed=42,
                  step_size=0.4,
-                 temperature = 600,
+                 temperature = 1200,
                  fingerprints = False,
                  Gs = None):
 
@@ -130,8 +130,10 @@ class MCSEnv(gym.Env):
         self.highest_energy = 0.0
         
         #Set the list of identified positions
-        self.found_minima_positions = [self.atoms.positions[self.free_atoms,:]]
-        self.found_minima_energies = [self.initial_energy]
+        self.minima = {}
+        self.minima['positions'] = [self.atoms.positions[self.free_atoms,:]]
+        self.minima['energies'] = [self.initial_energy]
+        self.minima['timesteps'] = [0]
         
         #Set the energy history
         self.energy_history = [(0, 0.)]
@@ -145,13 +147,13 @@ class MCSEnv(gym.Env):
             
             #Plot the atoms
             fig, ax1 = plt.subplots()
-            plot_atoms(self.atoms.repeat((2,2,1)), 
+            plot_atoms(self.atoms.repeat((3,3,1)), 
                        ax1, 
                        rotation='48x,-51y,-144z', 
                        show_unit_cell =0)
             
-            ax1.set_ylim([0,20])
-            ax1.set_xlim([-2, 15])
+            ax1.set_ylim([0,25])
+            ax1.set_xlim([-2, 20])
             ax1.axis('off')
             ax2 = fig.add_axes([0.35, 0.85, 0.3, 0.1])
             
@@ -160,9 +162,13 @@ class MCSEnv(gym.Env):
             ax2.plot(energy_history[:,0],
                      energy_history[:,1])
             
+            ax2.plot(self.minima['timesteps'],
+                    self.minima['energies'],'o')
+            
             #  ax2.set_xlim([0,200])
             ax2.set_ylim([0,2])
             ax2.set_ylabel('Energy [eV]')
+            
             
             #Render the canvas to rgb values for the gym render
             plt.draw()
@@ -201,14 +207,19 @@ class MCSEnv(gym.Env):
         current_energy = self._get_relative_energy()
         
         #Get the distance from the new minima to every other found minima
-        distances = [np.linalg.norm(current_positions-positions) for positions in self.found_minima_positions]
-        energy_differences = np.abs(current_energy-np.array(self.found_minima_energies))
+        distances = [np.linalg.norm(current_positions-positions) for positions in self.minima['positions']]
+        energy_differences = np.abs(current_energy-np.array(self.minima['energies']))
         
         #If the distance is non-trivial, add it to the list and score it
         if np.min(distances)>1e-2 and np.min(energy_differences)>0.01:
             print('found a new local minima! distance=%1.2f w energy %1.2f'%(np.min(distances), current_energy))
-            self.found_minima_positions.append(current_positions)
-            self.found_minima_energies.append(current_energy)
+            
+            self.minima['positions'].append(current_positions)
+            self.minima['energies'].append(current_energy)
+            
+            last_actions, last_energy = self.energy_history[-1]
+            self.minima['timesteps'].append(last_actions+1)
+            
             reward=1000-current_energy*100+100*np.exp(-np.min(distances))
             
         #otherwise, reset the atoms positions since the minimization didn't do anything interesting
