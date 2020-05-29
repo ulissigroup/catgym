@@ -12,3 +12,6 @@ Surface segregation using Deep Reinforcement Learning
 * After installing numpy and amptorch, you can install this package
     * `python setup.py develop` from the cloned github repo should work.
 
+# Notes for nersc intallation
+* the same conda installation won't work for CPU and GPU and nodes. Something about ASAP3 calculator 
+* ffmpeg from conda has a problem when running in parallel. Best to use `module load ffmpeg`
