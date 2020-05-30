@@ -1,1 +1,0 @@
-nohup python main.py --episode=1 --seed=1234 &> ./logs/nohup_seed_0.out &
