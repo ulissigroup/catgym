@@ -15,7 +15,7 @@ from ase.optimize.bfgslinesearch import BFGSLineSearch
 from ase.visualize.plot import plot_atoms
 from asap3 import EMT
 from sella import Sella
-from amptorch.utils import make_amp_descriptors_simple_nn
+from utils.symmetry_function import make_snn_params, wrap_symmetry_functions
 
 ACTION_LOOKUP = [
     'move',
@@ -37,18 +37,19 @@ class MCSEnv(gym.Env):
                  step_size=0.4,
                  temperature = 1200,
                  fingerprints = False,
-                 Gs = None):
+                 descriptors = None):
 
 
         self.step_size = step_size
         
-        self.initial_atoms = self._generate_slab(
+        self.initial_atoms, self.elements = self._generate_slab(
             size, element_choices, permute_seed)
+        self.atoms = self.initial_atoms.copy()
         
-        # Make fingerprints
-        self.fingerprints = fingerprints
-        self.Gs = Gs
-
+        if fingerprints:
+            self.snn_params = make_snn_params(self.elements, *descriptors)
+            self.fingerprints = fingerprints
+    
         # Mark the free atoms
         self.free_atoms = list(set(range(len(self.initial_atoms))) -
                                set(self.initial_atoms.constraints[0].get_indices()))
@@ -74,7 +75,6 @@ class MCSEnv(gym.Env):
 
     # open AI gym API requirements
     def step(self, action):
-        
         action_type = ACTION_LOOKUP[action['action_type']]
         
         reward = 0
@@ -122,7 +122,6 @@ class MCSEnv(gym.Env):
         return observation, reward, episode_over, {}
 
     def reset(self):
-        
         #Copy the initial atom and reset the calculator
         self.atoms = self.initial_atoms.copy()
         self.atoms.set_calculator(EMT())
@@ -197,7 +196,6 @@ class MCSEnv(gym.Env):
         self.energy_history.append((last_actions+1, relative_energy))
 
     def _minimize_and_score(self):
-
         #Get the initial atom positions
         initial_positions = self.atoms.positions[self.free_atoms,:].copy()
             
@@ -251,14 +249,12 @@ class MCSEnv(gym.Env):
 
     def _transition_state_search(self):
         fix = self.atoms.constraints[0].get_indices()
-
         dyn = Sella(self.atoms,  # Your Atoms object
                     constraints=dict(fix=fix),  # Your constraints
                     trajectory='saddle.traj',  # Optional trajectory,
                     logfile='sella.log'
                     )
         dyn.run(1e-2, steps=10)
-
         return
     
     def _get_relative_energy(self):
@@ -334,7 +330,7 @@ class MCSEnv(gym.Env):
             relative_energy = self.observation_space['energy'].high[0]
         
         if self.fingerprints:
-            fps, self.fp_length = self._get_fingerprints(self.initial_atoms)
+            fps, fp_length = self._get_fingerprints(self.atoms)
             
             return {'fingerprints': fps[self.free_atoms], 
                     'energy':np.array([relative_energy]),
@@ -347,24 +343,20 @@ class MCSEnv(gym.Env):
     
     def _get_fingerprints(self, atoms):
         #get fingerprints from amptorch as better state space feature
-        elements = np.array(atoms.symbols)
-        _, idx = np.unique(elements, return_index=True)
-        elements = list(elements[np.sort(idx)])
-
-        fps, fp_primes = make_amp_descriptors_simple_nn([atoms], self.Gs, elements, cores=10, label='foo', save=False)
-        fps = np.array(np.array(fps)[:,1].tolist()) # N x fp_length
-        self.fp_length = len(fps[0])
-        return fps, self.fp_length
+        fps = wrap_symmetry_functions(self.atoms, self.snn_params)
+        fp_length = fps.shape[-1]
+        
+        return fps, fp_length
     
     def _get_observation_space(self):       
         if self.fingerprints:
 
-            fps, self.fp_length = self._get_fingerprints(self.initial_atoms)
+            fps, fp_length = self._get_fingerprints(self.atoms)
         
             ##### define low and high for fingerprints
-            return spaces.Dict({'fingerprints': spaces.Box(low=-10,
-                                            high=10,
-                                            shape=(len(self.free_atoms), self.fp_length)),
+            return spaces.Dict({'fingerprints': spaces.Box(low=0,
+                                            high=15,
+                                            shape=(len(self.free_atoms), fp_length)),
                             'energy': spaces.Box(low=-2,
                                             high=10,
                                             shape=(1,)),
@@ -410,5 +402,9 @@ class MCSEnv(gym.Env):
         # Do a quick minimization to relax the structure
         dyn = BFGSLineSearch(atoms=slab, logfile=None)
         dyn.run(0.1)
-
-        return slab
+        
+        elements = np.array(slab.symbols)
+        _, idx = np.unique(elements, return_index=True)
+        elements = list(elements[np.sort(idx)])
+        
+        return slab, elements
