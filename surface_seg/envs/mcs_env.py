@@ -33,13 +33,36 @@ class MCSEnv(gym.Env):
 
     def __init__(self, size=(2, 2, 4),
                  element_choices={'Ni': 6, 'Pd': 5, 'Au': 5},
-                 permute_seed=42,
+                 permute_seed=None,
                  step_size=0.4,
                  temperature = 1200,
-                 fingerprints = False,
+                 fingerprints = True,
                  descriptors = None):
 
+        if descriptors is None:
+            Gs = {}
+            Gs["G2_etas"] = np.logspace(np.log10(0.05), np.log10(5.0), num=4)
+            Gs["G2_rs_s"] = [0] * 4
+            Gs["G4_etas"] = [0.005]
+            Gs["G4_zetas"] = [1.0]
+            Gs["G4_gammas"] = [+1.0, -1]
+            Gs["cutoff"] = 6.5
 
+            G = copy.deepcopy(Gs)
+
+            # order descriptors for simple_nn
+            cutoff = G["cutoff"]
+            G["G2_etas"] = [a / cutoff**2 for a in G["G2_etas"]]
+            G["G4_etas"] = [a / cutoff**2 for a in G["G4_etas"]]
+            descriptors = (
+                G["G2_etas"],
+                G["G2_rs_s"],
+                G["G4_etas"],
+                G["cutoff"],
+                G["G4_zetas"],
+                G["G4_gammas"],
+            )
+            
         self.step_size = step_size
         
         self.initial_atoms, self.elements = self._generate_slab(
@@ -89,7 +112,7 @@ class MCSEnv(gym.Env):
             reward+=self._minimize_and_score()
 
         elif action_type == 'transition_state_search':
-            self._transition_state_search()
+            self._check_TS()
 
         elif action_type == 'steepest_descent':
             self._steepest_descent(action['atom_selection'])
@@ -131,9 +154,14 @@ class MCSEnv(gym.Env):
         
         #Set the list of identified positions
         self.minima = {}
-        self.minima['positions'] = [self.atoms.positions[self.free_atoms,:]]
+        self.minima['positions'] = [self.atoms.positions[self.free_atoms,:].copy()]
         self.minima['energies'] = [self.initial_energy]
         self.minima['timesteps'] = [0]
+        
+        self.TS = {}
+        self.TS['positions'] = []
+        self.TS['energies'] = []
+        self.TS['timesteps'] = []
         
         #Set the energy history
         self.energy_history = [(0, 0.)]
@@ -165,10 +193,12 @@ class MCSEnv(gym.Env):
             ax2.plot(self.minima['timesteps'],
                     self.minima['energies'],'o')
             
+            ax2.plot(self.TS['timesteps'],
+                    self.TS['energies'],'o')
+            
             #  ax2.set_xlim([0,200])
             ax2.set_ylim([0,2])
             ax2.set_ylabel('Energy [eV]')
-            
             
             #Render the canvas to rgb values for the gym render
             plt.draw()
@@ -247,12 +277,49 @@ class MCSEnv(gym.Env):
             self.highest_energy = relative_energy
             
         return reward
+    
+    def _check_TS(self):
+        #Get the initial atom positions
+        initial_positions = self.atoms.positions[self.free_atoms,:].copy()
+        initial_energy = self._get_relative_energy()
+        
+        # Minimize and find the new position/energy
+        self._transition_state_search()
+        current_positions = self.atoms.positions[self.free_atoms,:].copy()
+        current_energy = self._get_relative_energy()
+        
+        #Get the distance from the new minima to every other found minima
+        if len(self.TS['energies'])==0:
+            self._record_TS()
+            
+        else:
+            distances = [np.linalg.norm(current_positions-positions) for positions in self.TS['positions']]
+            energy_differences = np.abs(current_energy-np.array(self.TS['energies']))
+
+            current_energy = self._get_relative_energy()
+
+            #If the distance is non-trivial, add it to the list and score it
+            if np.min(distances)>1e-1 and np.min(energy_differences)>0.05:
+
+                self._record_TS()
+
+#             else:
+#                 self.atoms.positions[self.free_atoms,:]=initial_positions
+           
+        return
+    
+    def _record_TS(self):
+        self.TS['positions'].append(self.atoms.positions[self.free_atoms,:].copy())
+        self.TS['energies'].append(self._get_relative_energy())
+            
+        last_actions, last_energy = self.energy_history[-1]
+        self.TS['timesteps'].append(last_actions+1)
 
     def _transition_state_search(self):
         fix = self.atoms.constraints[0].get_indices()
         dyn = Sella(self.atoms,  # Your Atoms object
                     constraints=dict(fix=fix),  # Your constraints
-                    trajectory='saddle.traj',  # Optional trajectory,
+#                     trajectory='saddle.traj',  # Optional trajectory,
                     logfile='sella.log'
                     )
         dyn.run(1e-2, steps=10)
