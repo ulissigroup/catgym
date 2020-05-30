@@ -2,6 +2,8 @@ from simple_nn.features.symmetry_function._libsymf import lib, ffi
 import numpy as np
 import copy
 
+# This file was adopted from SimpleNN's excellent fingerprinting code.
+
 def _gen_2Darray_for_ffi(arr, ffi, cdata="double"):
     # Function to generate 2D pointer for cffi
     shape = arr.shape

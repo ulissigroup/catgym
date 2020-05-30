@@ -15,7 +15,7 @@ from ase.optimize.bfgslinesearch import BFGSLineSearch
 from ase.visualize.plot import plot_atoms
 from asap3 import EMT
 from sella import Sella
-from utils.symmetry_function import make_snn_params, wrap_symmetry_functions
+from .symmetry_function import make_snn_params, wrap_symmetry_functions
 
 ACTION_LOOKUP = [
     'move',
@@ -46,9 +46,10 @@ class MCSEnv(gym.Env):
             size, element_choices, permute_seed)
         self.atoms = self.initial_atoms.copy()
         
+        self.fingerprints = fingerprints
         if fingerprints:
             self.snn_params = make_snn_params(self.elements, *descriptors)
-            self.fingerprints = fingerprints
+            
     
         # Mark the free atoms
         self.free_atoms = list(set(range(len(self.initial_atoms))) -
@@ -294,7 +295,9 @@ class MCSEnv(gym.Env):
         # estimate the energy associated with the trial move
         estimated_move_energy = np.abs(np.dot(atom_force,movement))
         
-        #scale the movement 
+        #scale the movement, assuming the PES is linear at the initial point. 
+        # could be improved with a quadratic approximation.
+        # or a call to scipy.optimize using the force at each point in the obj function
         if estimated_move_energy>reasonable_step_energy:
             trial_movement = movement*reasonable_step_energy/estimated_move_energy
         else:
@@ -377,7 +380,10 @@ class MCSEnv(gym.Env):
 
     def _generate_slab(self, size, element_choices, permute_seed):
         # generate a pseudo-random sequence of elements
-        np.random.seed(permute_seed)
+        
+        if permute_seed is not None:
+            np.random.seed(permute_seed)
+            
         num_atoms = np.prod(size) # math.prod is only available in python 3.8
         atom_ordering = list(itertools.chain.from_iterable(
             [[key]*element_choices[key] for key in element_choices]))
