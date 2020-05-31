@@ -2,35 +2,42 @@ import json
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
+
+
 
 class Callback():
     def __init__(self, log_dir):
         self.log_dir = log_dir
     
     def plot_energy(self, energies, actions, xlabel, ylabel, save_path):
-        plt.figure()
+        timesteps = np.arange(len(energies))
+        minimization = np.where(actions==1)[0]
+        transition_state_search = np.where(actions==2)[0]
+        
+        plt.figure(figsize=(9, 7.5))
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.title(xlabel+ ' vs. ' + ylabel)
+        
         plt.plot(energies, color='black')
-        minimize_and_score = np.where(actions==1)[0]
-        transition_state_search = np.where(actions==2)[0]
-        plt.scatter(minimize_and_score, energies[minimize_and_score], color='blue', 
+        plt.scatter(minimization, energies[minimization], color='blue', 
                     label='minimization')
         plt.scatter(transition_state_search, energies[transition_state_search],color='red', 
                     label='transition_state_search')
+        
         plt.legend(loc='upper left')
-        plt.savefig(save_path)
-        return 
+        plt.savefig(save_path, bbox_inches = 'tight')
+        return plt.close('all')
 
     def plot_rewards(self, rewards, xlabel, ylabel, save_path):
-        plt.figure()
+        plt.figure(figsize=(9, 7.5))
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.title(xlabel+ ' vs. ' + ylabel)
         plt.plot(rewards)
-        plt.savefig(save_path)
-        return
+        plt.savefig(save_path, bbox_inches = 'tight')
+        return plt.close('all')
 
     def episode_finish(self, runner, parallel):  
         results_dir = os.path.join(self.log_dir)
