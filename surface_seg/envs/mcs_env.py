@@ -15,6 +15,7 @@ from ase.optimize.bfgslinesearch import BFGSLineSearch
 from ase.visualize.plot import plot_atoms
 from asap3 import EMT
 from sella import Sella
+import copy
 from .symmetry_function import make_snn_params, wrap_symmetry_functions
 
 ACTION_LOOKUP = [
@@ -237,11 +238,11 @@ class MCSEnv(gym.Env):
         current_energy = self._get_relative_energy()
         
         #Get the distance from the new minima to every other found minima
-        distances = [np.linalg.norm(current_positions-positions) for positions in self.minima['positions']]
+        distances = [np.max(np.linalg.norm(current_positions-positions,1)) for positions in self.minima['positions']]
         energy_differences = np.abs(current_energy-np.array(self.minima['energies']))
         
         #If the distance is non-trivial, add it to the list and score it
-        if np.min(distances)>1e-2 and np.min(energy_differences)>0.01:
+        if np.min(distances)>0.2 or np.min(energy_differences)>0.1:
             print('found a new local minima! distance=%1.2f w energy %1.2f'%(np.min(distances), current_energy))
             
             self.minima['positions'].append(current_positions)
@@ -294,18 +295,19 @@ class MCSEnv(gym.Env):
             self._record_TS()
             
         else:
-            distances = [np.linalg.norm(current_positions-positions) for positions in self.TS['positions']]
+            distances = [np.max(np.linalg.norm(current_positions-positions,1)) for positions in self.TS['positions']]
             energy_differences = np.abs(current_energy-np.array(self.TS['energies']))
 
-            current_energy = self._get_relative_energy()
-
+#             print(distances)
+#             print(energy_differences)
+            
             #If the distance is non-trivial, add it to the list and score it
-            if np.min(distances)>1e-1 and np.min(energy_differences)>0.05:
+            if np.min(distances)>0.2 or np.min(energy_differences)>0.05:
 
                 self._record_TS()
 
-#             else:
-#                 self.atoms.positions[self.free_atoms,:]=initial_positions
+            else:
+                self.atoms.positions[self.free_atoms,:]=initial_positions
            
         return
     
