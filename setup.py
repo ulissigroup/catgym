@@ -23,6 +23,7 @@ setup(name='drl_surface_seg',
 			'numpy',
 			'matplotlib',
 			'asap3',
+            'seaborn',
 			'sella @ git+https://github.com/zadorlab/sella.git',
             'amptorch'],
       long_description='''Module for implementing DRL in surface segregation studies.''',)
