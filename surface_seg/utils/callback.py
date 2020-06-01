@@ -3,16 +3,14 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-
-
+from surface_seg.envs.mcs_env import ACTION_LOOKUP
 
 class Callback():
     def __init__(self, log_dir):
         self.log_dir = log_dir
     
-    def plot_energy(self, energies, actions, xlabel, ylabel, save_path):
+    def plot_energy(self, runner, energies, actions, xlabel, ylabel, save_path):
         timesteps = np.arange(len(energies))
-        minimization = np.where(actions==1)[0]
         transition_state_search = np.where(actions==2)[0]
         
         plt.figure(figsize=(9, 7.5))
@@ -21,10 +19,11 @@ class Callback():
         plt.title(xlabel+ ' vs. ' + ylabel)
         
         plt.plot(energies, color='black')
-        plt.scatter(minimization, energies[minimization], color='blue', 
-                    label='minimization')
-        plt.scatter(transition_state_search, energies[transition_state_search],color='red', 
-                    label='transition_state_search')
+
+        for action_index in range(len(ACTION_LOOKUP)):
+            action_time = np.where(actions==action_index)[0]
+            plt.plot(action_time, energies[action_time], 'o', 
+                    label=ACTION_LOOKUP[action_index])
         
         plt.legend(loc='upper left')
         plt.savefig(save_path, bbox_inches = 'tight')
@@ -64,7 +63,7 @@ class Callback():
         energies = runner.agent.states_buffers['energy'].reshape(-1)
         actions = runner.agent.actions_buffers['action_type'].reshape(-1)
 
-        self.plot_energy(energies, actions, 'steps', 'energy', energy_path)
+        self.plot_energy(runner, energies, actions, 'steps', 'energy', energy_path)
 
         with open(os.path.join(episode_dir, 'results.txt'), 'w') as outfile:
             json.dump(results, outfile)    
