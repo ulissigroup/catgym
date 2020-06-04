@@ -104,6 +104,7 @@ class MCSEnv(gym.Env):
 
     # open AI gym API requirements
     def step(self, action):
+        self.trajectories.append(self.atoms.copy())
         action_type = ACTION_LOOKUP[action['action_type']]
         
         reward = 0
@@ -170,6 +171,7 @@ class MCSEnv(gym.Env):
         
         #Set the energy history
         self.energy_history = [(0, 0.)]
+        self.trajectories = []
         
         return self._get_observation()
 
