@@ -49,8 +49,15 @@ class Callback():
         results['episode'] = runner.episodes
         results['reward'] = runner.episode_reward[0]
         results['updates'] = runner.updates
-        results['energies'] = runner.agent.states_buffers['energy'].reshape(-1).tolist()
-        results['actions'] = runner.agent.actions_buffers['action_type'].reshape(-1).tolist()
+
+        states = runner.agent.states_buffers
+        for key in states:
+            if key != 'action_type_mask' and key != 'atom_selection_mask':
+                results[key] = states[key].tolist()
+        actions = runner.agent.actions_buffers
+        for key in actions:
+            results[key] = actions[key].tolist()
+
         
         
         rewards = runner.episode_rewards
