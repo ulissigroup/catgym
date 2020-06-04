@@ -4,9 +4,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from surface_seg.envs.mcs_env import ACTION_LOOKUP
+from ase.io import write
+from asap3 import EMT
 
 class Callback():
-    def __init__(self, log_dir):
+    def __init__(self, log_dir=None):
         self.log_dir = log_dir
     
     def plot_energy(self, runner, energies, actions, xlabel, ylabel, save_path):
@@ -46,9 +48,11 @@ class Callback():
         results = {}
         results['episode'] = runner.episodes
         results['reward'] = runner.episode_reward[0]
+        results['updates'] = runner.updates
         results['energies'] = runner.agent.states_buffers['energy'].reshape(-1).tolist()
         results['actions'] = runner.agent.actions_buffers['action_type'].reshape(-1).tolist()
-
+        
+        
         rewards = runner.episode_rewards
         with open(os.path.join(results_dir, 'rewards.txt'), 'w') as outfile:
             json.dump(rewards, outfile)
@@ -67,5 +71,12 @@ class Callback():
 
         with open(os.path.join(episode_dir, 'results.txt'), 'w') as outfile:
             json.dump(results, outfile)    
+            
+        trajectories = []
+        for atoms in runner.environments[0].environment.environment.env.trajectories:
+            atoms.set_calculator(EMT())
+            trajectories.append(atoms)
+        
+        write(os.path.join(episode_dir, 'trajectories.traj'), trajectories)
 
         return True
