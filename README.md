@@ -5,7 +5,7 @@ Surface segregation using Deep Reinforcement Learning
 * Sella's installation requires numpy in setup.py, so you have to install that first. 
     * 'pip install numpy'
     * `pip install git+https://github.com/ulissigroup/sella.git`
-    * Sella has a few unnecessary debugging print statements that are helpful to hand-comment out. We can make a fork at some point, but I bet they clean this up.
+        * Sella has a few unnecessary debugging print statements that are helpful to hand-comment out. This is just a fork to clean those up
 * amptorch is also required
     * `pip install git+https://github.com/ulissigroup/amptorch.git`
      * simplenn is also required for amptorch fingerprinting. simpleNN has conflicting tensorflow requirements, but we just need the fingerprint part
