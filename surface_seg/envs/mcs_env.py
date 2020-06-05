@@ -104,11 +104,13 @@ class MCSEnv(gym.Env):
 
     # open AI gym API requirements
     def step(self, action):
-        self.trajectories.append(self.atoms.copy())
         action_type = ACTION_LOOKUP[action['action_type']]
         
+        self.trajectories.append(self.atoms.copy())
+        self.energies.append(self._get_relative_energy())
+        self.actions.append(int(action['action_type']))
+
         reward = 0
-        
         if action_type == 'move':
             self._move_atom(action['atom_selection'], 
                             action['movement'])
@@ -172,6 +174,8 @@ class MCSEnv(gym.Env):
         #Set the energy history
         self.energy_history = [(0, 0.)]
         self.trajectories = []
+        self.energies = []
+        self.actions = []
         
         return self._get_observation()
 
@@ -204,7 +208,7 @@ class MCSEnv(gym.Env):
                     self.TS['energies'],'o')
             
             #  ax2.set_xlim([0,200])
-            ax2.set_ylim([0,2])
+#             ax2.set_ylim([0,2])
             ax2.set_ylabel('Energy [eV]')
             
             #Render the canvas to rgb values for the gym render

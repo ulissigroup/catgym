@@ -11,7 +11,7 @@ class Callback():
     def __init__(self, log_dir=None):
         self.log_dir = log_dir
     
-    def plot_energy(self, runner, energies, actions, xlabel, ylabel, save_path):
+    def plot_energy(self, energies, actions, xlabel, ylabel, save_path):
         timesteps = np.arange(len(energies))
         transition_state_search = np.where(actions==2)[0]
         
@@ -44,20 +44,20 @@ class Callback():
         results_dir = os.path.join(self.log_dir)
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
-
+        
+        env = runner.environments[0].environment.environment.env
+        
         results = {}
         results['episode'] = runner.episodes
         results['reward'] = runner.episode_reward[0]
         results['updates'] = runner.updates
-
-        states = runner.agent.states_buffers
-        for key in states:
-            if key != 'action_type_mask' and key != 'atom_selection_mask':
-                results[key] = states[key].tolist()
-        actions = runner.agent.actions_buffers
-        for key in actions:
-            results[key] = actions[key].tolist()
-
+        results['initial_energy'] = env.initial_energy
+        results['energies'] = env.energies
+        results['actions'] = env.actions
+        results['minima_energies'] = env.minima['energies']
+        results['minima_steps'] = env.minima['timesteps']
+        results['TS_energies'] = env.TS['energies']
+        results['TS_steps'] = env.TS['timesteps']
         
         
         rewards = runner.episode_rewards
@@ -71,16 +71,17 @@ class Callback():
         if not os.path.exists(episode_dir):
             os.makedirs(episode_dir)
         energy_path = os.path.join(episode_dir, 'energies.png')
-        energies = runner.agent.states_buffers['energy'].reshape(-1)
-        actions = runner.agent.actions_buffers['action_type'].reshape(-1)
+        
+        energies = np.array(results['energies'])
+        actions = np.array(results['actions'])
 
-        self.plot_energy(runner, energies, actions, 'steps', 'energy', energy_path)
+        self.plot_energy(energies, actions, 'steps', 'energy', energy_path)
 
         with open(os.path.join(episode_dir, 'results.txt'), 'w') as outfile:
             json.dump(results, outfile)    
             
         trajectories = []
-        for atoms in runner.environments[0].environment.environment.env.trajectories:
+        for atoms in env.trajectories:
             atoms.set_calculator(EMT())
             trajectories.append(atoms)
         
