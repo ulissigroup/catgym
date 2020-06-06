@@ -163,7 +163,7 @@ class MCSEnv(gym.Env):
         #Set the list of identified positions
         self.minima = {}
         self.minima['positions'] = [self.atoms.positions[self.free_atoms,:].copy()]
-        self.minima['energies'] = [self.initial_energy]
+        self.minima['energies'] = [self._get_relative_energy]
         self.minima['timesteps'] = [0]
         
         self.TS = {}
