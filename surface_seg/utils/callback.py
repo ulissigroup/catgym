@@ -11,7 +11,14 @@ class Callback():
     def __init__(self, log_dir=None):
         self.log_dir = log_dir
     
-    def plot_energy(self, energies, actions, xlabel, ylabel, save_path):
+    def plot_energy(self, results, xlabel, ylabel, save_path):
+        energies = np.array(results['energies'])
+        actions = np.array(results['actions'])
+        minima_energies = results['minima_energies']
+        minima_steps = results['minima_steps']
+        TS_energies = results['TS_energies']
+        TS_steps = results['TS_steps']
+        
         timesteps = np.arange(len(energies))
         transition_state_search = np.where(actions==2)[0]
         
@@ -26,6 +33,9 @@ class Callback():
             action_time = np.where(actions==action_index)[0]
             plt.plot(action_time, energies[action_time], 'o', 
                     label=ACTION_LOOKUP[action_index])
+        
+        plt.scatter(minima_steps, minima_energies, label='minima', marker='x', color='black', s=150)
+        plt.scatter(TS_steps, TS_energies, label='TS', marker='x', color='r', s=150)
         
         plt.legend(loc='upper left')
         plt.savefig(save_path, bbox_inches = 'tight')
@@ -72,10 +82,9 @@ class Callback():
             os.makedirs(episode_dir)
         energy_path = os.path.join(episode_dir, 'energies.png')
         
-        energies = np.array(results['energies'])
-        actions = np.array(results['actions'])
 
-        self.plot_energy(energies, actions, 'steps', 'energy', energy_path)
+
+        self.plot_energy(results, 'steps', 'energy', energy_path)
 
         with open(os.path.join(episode_dir, 'results.txt'), 'w') as outfile:
             json.dump(results, outfile)    
