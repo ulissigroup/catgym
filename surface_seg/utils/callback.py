@@ -6,10 +6,16 @@ import seaborn as sns
 from surface_seg.envs.mcs_env import ACTION_LOOKUP
 from ase.io import write
 from asap3 import EMT
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import pandas as pd
+from surface_seg.envs.symmetry_function import make_snn_params
+
 
 class Callback():
-    def __init__(self, log_dir=None):
+    def __init__(self, log_dir=None, plot_frequency=50):
         self.log_dir = log_dir
+        self.plot_frequency = plot_frequency
     
     def plot_energy(self, results, xlabel, ylabel, save_path):
         energies = np.array(results['energies'])
@@ -40,7 +46,7 @@ class Callback():
         plt.legend(loc='upper left')
         plt.savefig(save_path, bbox_inches = 'tight')
         return plt.close('all')
-
+    
     def plot_rewards(self, rewards, xlabel, ylabel, save_path):
         plt.figure(figsize=(9, 7.5))
         plt.xlabel(xlabel)
@@ -51,49 +57,66 @@ class Callback():
         return plt.close('all')
 
     def episode_finish(self, runner, parallel):  
-        results_dir = os.path.join(self.log_dir)
-        if not os.path.exists(results_dir):
-            os.makedirs(results_dir)
+        log_dir = os.path.join(self.log_dir)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
         
         env = runner.environments[0].environment.environment.env
+        free_atoms = list(set(range(len(env.atoms))) -
+                               set(env.atoms.constraints[0].get_indices()))
+        
         
         results = {}
         results['episode'] = runner.episodes
         results['reward'] = runner.episode_reward[0]
         results['updates'] = runner.updates
+        results['chemical_symbols'] = env.atoms.get_chemical_symbols()
+        results['free_atoms'] = free_atoms
         results['initial_energy'] = env.initial_energy
         results['energies'] = env.energies
         results['actions'] = env.actions
+#         if 'fingerprints' in runner.agent.states_buffers:
+#             results['fingerprints'] = runner.agent.states_buffers['fingerprints'][0].tolist()
         results['minima_energies'] = env.minima['energies']
         results['minima_steps'] = env.minima['timesteps']
         results['TS_energies'] = env.TS['energies']
         results['TS_steps'] = env.TS['timesteps']
         
+        fps_params = {}
+        fps_params['elements'] = env.elements
+        fps_params['descriptors'] = env.descriptors
+        with open(os.path.join(log_dir, 'fps_params.txt'), 'w') as outfile:
+            json.dump(fps_params, outfile)
         
         rewards = runner.episode_rewards
-        with open(os.path.join(results_dir, 'rewards.txt'), 'w') as outfile:
+        with open(os.path.join(log_dir, 'rewards.txt'), 'w') as outfile:
             json.dump(rewards, outfile)
-        reward_path = os.path.join(results_dir, 'rewards.png')
+        reward_path = os.path.join(log_dir, 'rewards.png')
 
         self.plot_rewards(rewards, 'episodes', 'reward', reward_path)
-
-        episode_dir = os.path.join(results_dir, 'episode_'+str(runner.episodes))
-        if not os.path.exists(episode_dir):
-            os.makedirs(episode_dir)
-        energy_path = os.path.join(episode_dir, 'energies.png')
+                        
+        results_dir = os.path.join(log_dir, 'results')
+        if not os.path.exists(results_dir):
+            os.makedirs(results_dir)
+        with open(os.path.join(results_dir, 'results_%d.txt' %results['episode']), 'w') as outfile:
+            json.dump(results, outfile)         
+                
         
-
-
-        self.plot_energy(results, 'steps', 'energy', energy_path)
-
-        with open(os.path.join(episode_dir, 'results.txt'), 'w') as outfile:
-            json.dump(results, outfile)    
-            
+        traj_dir = os.path.join(log_dir, 'trajectories')
+        if not os.path.exists(traj_dir):
+            os.makedirs(traj_dir)
         trajectories = []
         for atoms in env.trajectories:
             atoms.set_calculator(EMT())
             trajectories.append(atoms)
-        
-        write(os.path.join(episode_dir, 'trajectories.traj'), trajectories)
+        write(os.path.join(traj_dir, 'episode_%d.traj' %results['episode']), trajectories)
+                
+        plot_dir = os.path.join(log_dir, 'plots')
+        if not os.path.exists(plot_dir):
+            os.makedirs(plot_dir)
+        if results['episode'] % self.plot_frequency == 0: 
+            energy_path = os.path.join(plot_dir, 'energy_%d.png' %results['episode'])
+            self.plot_energy(results, 'steps', 'energy', energy_path)
+
 
         return True

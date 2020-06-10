@@ -74,7 +74,7 @@ class MCSEnv(gym.Env):
                     G["G4_zetas"],
                     G["G4_gammas"],
                 )
-                
+            self.descriptors = descriptors
             self.snn_params = make_snn_params(self.elements, *descriptors)
             
         self.observation_forces = observation_forces
@@ -163,7 +163,7 @@ class MCSEnv(gym.Env):
         #Set the list of identified positions
         self.minima = {}
         self.minima['positions'] = [self.atoms.positions[self.free_atoms,:].copy()]
-        self.minima['energies'] = [self._get_relative_energy]
+        self.minima['energies'] = [self._get_relative_energy()]
         self.minima['timesteps'] = [0]
         
         self.TS = {}
@@ -252,7 +252,7 @@ class MCSEnv(gym.Env):
         
         #If the distance is non-trivial, add it to the list and score it
         if np.min(distances)>0.2 or np.min(energy_differences)>0.1:
-            print('found a new local minima! distance=%1.2f w energy %1.2f'%(np.min(distances), current_energy))
+#             print('found a new local minima! distance=%1.2f w energy %1.2f'%(np.min(distances), current_energy))
             
             self.minima['positions'].append(current_positions)
             self.minima['energies'].append(current_energy)
