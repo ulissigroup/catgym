@@ -444,6 +444,8 @@ class MCSEnv(gym.Env):
         # Otherwise, the policy networks consider these states as images and use standard filter to pool these vectors, which does not make sense.
         # For now, no lower/upper bounds
         # Scaled and Normarlized fingerprints for better updating weights in the policy networks
+        # Dit not include energies because (1,) input is too short for network training? 
+        # The default (auto) network we are now using will expand (1,) --> (64,). Not sure if it can learn meaningful observations by doing it.
         
         if self.observation_fingerprints and self.observation_positions:
             fps, fp_length = self._get_fingerprints(self.atoms)
