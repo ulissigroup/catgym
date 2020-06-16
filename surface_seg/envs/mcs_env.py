@@ -18,11 +18,12 @@ from sella import Sella
 import copy
 from collections import OrderedDict
 from .symmetry_function import make_snn_params, wrap_symmetry_functions
+from sklearn.preprocessing import StandardScaler, Normalizer
 
 ACTION_LOOKUP = [
-    'minimize_and_score',
     'move',
     'transition_state_search',
+    'minimize_and_score',
 #     'steepest_descent',
 #     'steepest_ascent'
 ]
@@ -40,6 +41,7 @@ class MCSEnv(gym.Env):
                  temperature = 1200,
                  observation_fingerprints = True,
                  observation_forces=True,
+                 observation_positions = True,
                  descriptors = None):
             
         self.step_size = step_size
@@ -47,7 +49,7 @@ class MCSEnv(gym.Env):
         self.initial_atoms, self.elements = self._generate_slab(
             size, element_choices, permute_seed)
         self.atoms = self.initial_atoms.copy()
-        
+        self.observation_positions = observation_positions
         self.observation_fingerprints = observation_fingerprints
         if self.observation_fingerprints:
             
@@ -109,7 +111,8 @@ class MCSEnv(gym.Env):
         self.trajectories.append(self.atoms.copy())
         self.energies.append(self._get_relative_energy())
         self.actions.append(int(action['action_type']))
-
+        self.positions.append(self.atoms.get_scaled_positions(wrap=False)[self.free_atoms].tolist())
+        
         reward = 0
         if action_type == 'move':
             self._move_atom(action['atom_selection'], 
@@ -176,7 +179,7 @@ class MCSEnv(gym.Env):
         self.trajectories = []
         self.energies = []
         self.actions = []
-        
+        self.positions = []
         return self._get_observation()
 
     def render(self, mode='rgb_array'):
@@ -238,6 +241,7 @@ class MCSEnv(gym.Env):
         self.energy_history.append((last_actions+1, relative_energy))
 
     def _minimize_and_score(self):
+        reward = 0
         #Get the initial atom positions
         initial_positions = self.atoms.positions[self.free_atoms,:].copy()
         
@@ -260,12 +264,13 @@ class MCSEnv(gym.Env):
             last_actions, last_energy = self.energy_history[-1]
             self.minima['timesteps'].append(last_actions+1)
             
-            reward=1000-current_energy*100+100*np.exp(-np.min(distances))
-            
+#             reward=1000-current_energy*100+100*np.exp(-np.min(distances))
+            reward = current_energy #+ np.exp(-np.min(distances))
         #otherwise, reset the atoms positions since the minimization didn't do anything interesting
         else:
             self.atoms.positions[self.free_atoms,:]=initial_positions
-            reward = 0 
+#             reward = 0 
+            reward -= current_energy
       
         return reward
     
@@ -308,12 +313,11 @@ class MCSEnv(gym.Env):
             energy_differences = np.abs(current_energy-np.array(self.TS['energies']))
 
             #If the distance is non-trivial, add it to the list and score it
-            if np.min(distances)>0.2 or np.min(energy_differences)>0.05:
+            if np.min(distances)>0.2 or np.min(energy_differences)>0.1:
                 self._record_TS()
 
             else:
                 self.atoms.positions[self.free_atoms,:]=initial_positions
-           
         return
     
     def _record_TS(self):
@@ -397,17 +401,22 @@ class MCSEnv(gym.Env):
            
         #Clip the energy to the state space limits to avoid really bad energies
         relative_energy = self._get_relative_energy()
-        if relative_energy > self.observation_space['energy'].high[0]:
-            relative_energy = self.observation_space['energy'].high[0]
+#         if relative_energy > self.observation_space['energy'].high[0]:
+#             relative_energy = self.observation_space['energy'].high[0]
         
-        observation = {'energy':np.array([relative_energy])}
+#         observation = {'energy':np.array([relative_energy])}
+        observation = {}
         
         if self.observation_fingerprints:
             fps, fp_length = self._get_fingerprints(self.atoms)
-            observation['fingerprints'] = fps[self.free_atoms]
+            fps = fps[self.free_atoms]
+            fps = StandardScaler().fit_transform(fps)
+            fps = Normalizer().fit_transform(fps)
+            fps = fps.flatten()
+            observation['fingerprints'] = fps#.reshape(-1, fp_length)
+#             observation['fingerprints'] = fps[self.free_atoms]
             
-        else:
-            observation['positions'] = self.atoms.get_scaled_positions(wrap=False)[self.free_atoms]
+        observation['positions'] = self.atoms.get_scaled_positions(wrap=False)[self.free_atoms].flatten()
             
         if self.observation_forces:
             
@@ -430,52 +439,21 @@ class MCSEnv(gym.Env):
         return fps, fp_length
     
     def _get_observation_space(self):  
+        # Can make more space options later.
+        # Flattened atomic positions and fingerprints to not use the default conv1d layers.
+        # Otherwise, the policy networks consider these states as images and use standard filter to pool these vectors, which does not make sense.
+        # For now, no lower/upper bounds
+        # Scaled and Normarlized fingerprints for better updating weights in the policy networks
         
-        if self.observation_fingerprints and self.observation_forces:
+        if self.observation_fingerprints and self.observation_positions:
             fps, fp_length = self._get_fingerprints(self.atoms)
-            observation_space = spaces.Dict({'energy': spaces.Box(low=-2,
-                                            high=10,
-                                            shape=(1,)),
-                                            'fingerprints': spaces.Box(low=0,
-                                            high=15,
-                                            shape=(len(self.free_atoms), fp_length)),
-                                            'forces': spaces.Box(low=-2,
-                                                high=2,
-                                                shape=(len(self.free_atoms),3))})
-            
-            
-        elif self.observation_fingerprints and not(self.observation_forces):
-            fps, fp_length = self._get_fingerprints(self.atoms)
-            observation_space = spaces.Dict({'energy': spaces.Box(low=-2,
-                                            high=10,
-                                            shape=(1,)),
-                                            'fingerprints': spaces.Box(low=0,
-                                            high=15,
-                                            shape=(len(self.free_atoms), fp_length))})
-            
-            
-        elif not(self.observation_fingerprints) and self.observation_forces:
-            
-            observation_space = spaces.Dict({'energy': spaces.Box(low=-2,
-                                            high=10,
-                                            shape=(1,)),
-                                            'positions':  spaces.Box(low=-1,
-                                                high=2,
-                                                shape=(len(self.free_atoms),3)),
-                                            'forces': spaces.Box(low=-2,
-                                                high=2,
-                                                shape=(len(self.free_atoms),3))})
-            
-            
-        elif not(self.observation_fingerprints) and not(self.observation_forces):
-            
-            observation_space = spaces.Dict({'energy': spaces.Box(low=-2,
-                                            high=10,
-                                            shape=(1,)),
-                                            'positions':  spaces.Box(low=0,
-                                                high=1,
-                                                shape=(len(self.free_atoms),3))})
-            
+            observation_space = spaces.Dict({'fingerprints': spaces.Box(low=np.inf,
+                                            high=np.inf,
+                                            shape=(len(self.free_atoms)*fp_length, )),
+                                            'positions': spaces.Box(low=-1,
+                                            high=2,
+                                            shape=(len(self.free_atoms)*3,))})
+
         return observation_space
 
     def _generate_slab(self, size, element_choices, permute_seed):
@@ -514,3 +492,4 @@ class MCSEnv(gym.Env):
         elements = list(elements[np.sort(idx)])
         
         return slab, elements
+
