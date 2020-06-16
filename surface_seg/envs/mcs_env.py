@@ -265,7 +265,7 @@ class MCSEnv(gym.Env):
             self.minima['timesteps'].append(last_actions+1)
             
 #             reward=1000-current_energy*100+100*np.exp(-np.min(distances))
-            reward = current_energy #+ np.exp(-np.min(distances))
+            reward = self.highest_energy - current_energy #+ np.exp(-np.min(distances))
         #otherwise, reset the atoms positions since the minimization didn't do anything interesting
         else:
             self.atoms.positions[self.free_atoms,:]=initial_positions
@@ -296,6 +296,7 @@ class MCSEnv(gym.Env):
         return reward
     
     def _check_TS(self):
+        reward = 0
         #Get the initial atom positions
         initial_positions = self.atoms.positions[self.free_atoms,:].copy()
         initial_energy = self._get_relative_energy()
