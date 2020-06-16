@@ -270,6 +270,7 @@ class MCSEnv(gym.Env):
         else:
             self.atoms.positions[self.free_atoms,:]=initial_positions
 #             reward = 0 
+            # Penalizing the model when it triggered minimzation but not find new local minima (wasted time)
             reward -= current_energy
       
         return reward
@@ -317,6 +318,8 @@ class MCSEnv(gym.Env):
                 self._record_TS()
 
             else:
+                # Penalizing the model when it triggered Ts search but not find new TS(wasted time)
+                reward -= current_energy
                 self.atoms.positions[self.free_atoms,:]=initial_positions
         return
     
