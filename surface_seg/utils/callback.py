@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 from surface_seg.envs.symmetry_function import make_snn_params
 
+## TODO: plot computational times per episodes? # Calculations/seconds vs. episodes
 
 class Callback():
     def __init__(self, log_dir=None, plot_frequency=50):
@@ -47,15 +48,15 @@ class Callback():
         plt.savefig(save_path, bbox_inches = 'tight')
         return plt.close('all')
     
-    def plot_rewards(self, rewards, xlabel, ylabel, save_path):
+    def plot_summary(self, plotting_values, xlabel, ylabel, save_path):
         plt.figure(figsize=(9, 7.5))
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
-        plt.title(xlabel+ ' vs. ' + ylabel)
-        plt.plot(rewards)
+        plt.title(ylabel+ ' vs. ' + xlabel)
+        plt.plot(plotting_values)
         plt.savefig(save_path, bbox_inches = 'tight')
         return plt.close('all')
-
+    
     def episode_finish(self, runner, parallel):  
         log_dir = os.path.join(self.log_dir)
         if not os.path.exists(log_dir):
@@ -75,12 +76,14 @@ class Callback():
         results['initial_energy'] = env.initial_energy
         results['energies'] = env.energies
         results['actions'] = env.actions
-#         if 'fingerprints' in runner.agent.states_buffers:
-#             results['fingerprints'] = runner.agent.states_buffers['fingerprints'][0].tolist()
+        if 'fingerprints' in runner.agent.states_buffers:
+            results['fingerprints'] = runner.agent.states_buffers['fingerprints'][0].tolist()
+        results['positions'] = env.positions
         results['minima_energies'] = env.minima['energies']
         results['minima_steps'] = env.minima['timesteps']
         results['TS_energies'] = env.TS['energies']
         results['TS_steps'] = env.TS['timesteps']
+        results['total_calculations'] = int(np.sum(np.array(env.num_calculations)[:,1]))
         
         fps_params = {}
         fps_params['elements'] = env.elements
@@ -89,11 +92,18 @@ class Callback():
             json.dump(fps_params, outfile)
         
         rewards = runner.episode_rewards
+        running_times = runner.episode_agent_seconds
+        total_calculations = runner.episode_calculations
+        
         with open(os.path.join(log_dir, 'rewards.txt'), 'w') as outfile:
             json.dump(rewards, outfile)
         reward_path = os.path.join(log_dir, 'rewards.png')
-
-        self.plot_rewards(rewards, 'episodes', 'reward', reward_path)
+        time_path = os.path.join(log_dir, 'running_times.png')
+        cost_path = os.path.join(log_dir, 'comp_cost.png')
+        
+        self.plot_summary(rewards, 'episodes', 'reward', reward_path)
+        self.plot_summary(running_times, 'episodes', 'seconds', time_path)
+        self.plot_summary(total_calculations, 'episodes', '# total calculations', cost_path)
                         
         results_dir = os.path.join(log_dir, 'results')
         if not os.path.exists(results_dir):
@@ -102,21 +112,35 @@ class Callback():
             json.dump(results, outfile)         
                 
         
-        traj_dir = os.path.join(log_dir, 'trajectories')
-        if not os.path.exists(traj_dir):
-            os.makedirs(traj_dir)
-        trajectories = []
-        for atoms in env.trajectories:
-            atoms.set_calculator(EMT())
-            trajectories.append(atoms)
-        write(os.path.join(traj_dir, 'episode_%d.traj' %results['episode']), trajectories)
+#         traj_dir = os.path.join(log_dir, 'trajectories')
+#         if not os.path.exists(traj_dir):
+#             os.makedirs(traj_dir)
+#         trajectories = []
+#         for atoms in env.trajectories:
+#             atoms.set_calculator(EMT())
+#             trajectories.append(atoms)
+#         write(os.path.join(traj_dir, 'episode_%d.traj' %results['episode']), trajectories)
                 
-        plot_dir = os.path.join(log_dir, 'plots')
-        if not os.path.exists(plot_dir):
-            os.makedirs(plot_dir)
+#         plot_dir = os.path.join(log_dir, 'plots')
+#         if not os.path.exists(plot_dir):
+#             os.makedirs(plot_dir)
+#         if results['episode'] % self.plot_frequency == 0: 
+#             energy_path = os.path.join(plot_dir, 'energy_%d.png' %results['episode'])
+#             self.plot_energy(results, 'steps', 'energy', energy_path)
+                
+        
         if results['episode'] % self.plot_frequency == 0: 
-            energy_path = os.path.join(plot_dir, 'energy_%d.png' %results['episode'])
+            episode_dir = os.path.join(log_dir, 'episode_%d' %results['episode'])
+            if not os.path.exists(episode_dir):
+                os.makedirs(episode_dir)
+                
+            energy_path = os.path.join(episode_dir, 'energy_%d.png' %results['episode'])
             self.plot_energy(results, 'steps', 'energy', energy_path)
-
+        
+            trajectories = []
+            for atoms in env.trajectories:
+                atoms.set_calculator(EMT())
+                trajectories.append(atoms)
+            write(os.path.join(episode_dir, 'episode_%d.traj' %results['episode']), trajectories)
 
         return True
