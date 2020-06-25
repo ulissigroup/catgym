@@ -11,8 +11,6 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 from surface_seg.envs.symmetry_function import make_snn_params
 
-## TODO: plot computational times per episodes? # Calculations/seconds vs. episodes
-
 class Callback():
     def __init__(self, log_dir=None, plot_frequency=50):
         self.log_dir = log_dir
@@ -102,10 +100,8 @@ class Callback():
         
         force_calls_path = os.path.join(log_dir, 'force_calls.txt')
         if os.path.exists(force_calls_path):
-#             f = pickle.load(open(force_calls_path, 'rb'))
             f = json.load(open(force_calls_path, 'r'))
             f.append(env.force_calls)
-#             pickle.dump(f, open(force_calls_path, 'wb'))
             json.dump(f, open(force_calls_path, 'w'))
             self.plot_summary(f, 'episodes', 'total force calls', force_calls_plot_path)
         else:
@@ -119,25 +115,7 @@ class Callback():
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
         with open(os.path.join(results_dir, 'results_%d.txt' %results['episode']), 'w') as outfile:
-            json.dump(results, outfile)         
-                
-        
-#         traj_dir = os.path.join(log_dir, 'trajectories')
-#         if not os.path.exists(traj_dir):
-#             os.makedirs(traj_dir)
-#         trajectories = []
-#         for atoms in env.trajectories:
-#             atoms.set_calculator(EMT())
-#             trajectories.append(atoms)
-#         write(os.path.join(traj_dir, 'episode_%d.traj' %results['episode']), trajectories)
-                
-#         plot_dir = os.path.join(log_dir, 'plots')
-#         if not os.path.exists(plot_dir):
-#             os.makedirs(plot_dir)
-#         if results['episode'] % self.plot_frequency == 0: 
-#             energy_path = os.path.join(plot_dir, 'energy_%d.png' %results['episode'])
-#             self.plot_energy(results, 'steps', 'energy', energy_path)
-                
+            json.dump(results, outfile)                       
         
         if results['episode'] % self.plot_frequency == 0: 
             episode_dir = os.path.join(log_dir, 'episode_%d' %results['episode'])
