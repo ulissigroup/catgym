@@ -66,10 +66,10 @@ class Callback():
         free_atoms = list(set(range(len(env.atoms))) -
                                set(env.atoms.constraints[0].get_indices()))
         
-        
         results = {}
         results['episode'] = runner.episodes
         results['reward'] = runner.episode_reward[0]
+        results['force_calls'] = env.force_calls
         results['updates'] = runner.updates
         results['chemical_symbols'] = env.atoms.get_chemical_symbols()
         results['free_atoms'] = free_atoms
@@ -83,7 +83,6 @@ class Callback():
         results['minima_steps'] = env.minima['timesteps']
         results['TS_energies'] = env.TS['energies']
         results['TS_steps'] = env.TS['timesteps']
-        results['total_calculations'] = int(np.sum(np.array(env.num_calculations)[:,1]))
         
         fps_params = {}
         fps_params['elements'] = env.elements
@@ -93,17 +92,28 @@ class Callback():
         
         rewards = runner.episode_rewards
         running_times = runner.episode_agent_seconds
-        total_calculations = runner.episode_calculations
+        force_calls = results['force_calls']
         
         with open(os.path.join(log_dir, 'rewards.txt'), 'w') as outfile:
             json.dump(rewards, outfile)
         reward_path = os.path.join(log_dir, 'rewards.png')
         time_path = os.path.join(log_dir, 'running_times.png')
-        cost_path = os.path.join(log_dir, 'comp_cost.png')
+        force_calls_plot_path = os.path.join(log_dir, 'force_calls.png')
+        
+        force_calls_path = os.path.join(log_dir, 'force_calls.txt')
+        if os.path.exists(force_calls_path):
+#             f = pickle.load(open(force_calls_path, 'rb'))
+            f = json.load(open(force_calls_path, 'r'))
+            f.append(env.force_calls)
+#             pickle.dump(f, open(force_calls_path, 'wb'))
+            json.dump(f, open(force_calls_path, 'w'))
+            self.plot_summary(f, 'episodes', 'total force calls', force_calls_plot_path)
+        else:
+            json.dump([env.force_calls], open(force_calls_path, 'w'))
+            self.plot_summary([env.force_calls], 'episodes', 'total force calls', force_calls_plot_path)
         
         self.plot_summary(rewards, 'episodes', 'reward', reward_path)
         self.plot_summary(running_times, 'episodes', 'seconds', time_path)
-        self.plot_summary(total_calculations, 'episodes', '# total calculations', cost_path)
                         
         results_dir = os.path.join(log_dir, 'results')
         if not os.path.exists(results_dir):
