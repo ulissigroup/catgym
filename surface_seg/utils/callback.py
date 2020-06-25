@@ -55,6 +55,30 @@ class Callback():
         plt.savefig(save_path, bbox_inches = 'tight')
         return plt.close('all')
     
+    def twinplot_summary(self, first_value, second_value, xlabel, ylabel_1, ylabel_2, save_path):
+        fig, ax1 = plt.subplots(figsize=(9, 7.5))
+        
+        lns1 = ax1.plot(first_value, label = ylabel_1, color = 'royalblue')
+        ax1.set_xlabel(xlabel, fontsize=15)
+        ax1.set_ylabel(ylabel_1, fontsize=15, color = 'royalblue')
+        ax1.tick_params(axis='y', labelcolor='royalblue')
+        plt.yticks(fontsize=12)
+        plt.xticks(fontsize=12)
+
+        ax2 = ax1.twinx()
+        lns2 = ax2.plot(second_value, label = ylabel_2, color = 'orange')
+        ax2.set_ylabel(ylabel_2, fontsize=15, color = 'orange')
+        ax2.tick_params(axis='y', labelcolor='orange')
+        plt.yticks(fontsize=12)
+        
+        # Making two legends
+        legend = lns1 + lns2
+        labels = [ax.get_label() for ax in legend]
+        ax1.legend(legend, labels, loc = 0)
+        plt.savefig(save_path, bbox_inches = 'tight')
+        return plt.close('all')        
+        
+    
     def episode_finish(self, runner, parallel):  
         log_dir = os.path.join(self.log_dir)
         if not os.path.exists(log_dir):
@@ -97,6 +121,7 @@ class Callback():
         reward_path = os.path.join(log_dir, 'rewards.png')
         time_path = os.path.join(log_dir, 'running_times.png')
         force_calls_plot_path = os.path.join(log_dir, 'force_calls.png')
+        twin_plot_path = os.path.join(log_dir, 'twin.png')
         
         force_calls_path = os.path.join(log_dir, 'force_calls.txt')
         if os.path.exists(force_calls_path):
@@ -104,6 +129,8 @@ class Callback():
             f.append(env.force_calls)
             json.dump(f, open(force_calls_path, 'w'))
             self.plot_summary(f, 'episodes', 'total force calls', force_calls_plot_path)
+            
+            self.twinplot_summary(rewards, f, 'episodes', 'rewards', 'total force calls', twin_plot_path)
         else:
             json.dump([env.force_calls], open(force_calls_path, 'w'))
             self.plot_summary([env.force_calls], 'episodes', 'total force calls', force_calls_plot_path)
