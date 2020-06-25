@@ -9,11 +9,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from ase.build import fcc111
 from ase.visualize import view
-from ase.calculators.emt import EMT
+from ase.calculators.emt import EMT as EMT_orig
 from ase.constraints import FixAtoms
 from ase.optimize.bfgslinesearch import BFGSLineSearch
 from ase.visualize.plot import plot_atoms
 from asap3 import EMT
+from surface_seg.utils.countercalc import CounterCalc
 from sella import Sella
 import copy
 from collections import OrderedDict
@@ -48,7 +49,11 @@ class MCSEnv(gym.Env):
         
         self.initial_atoms, self.elements = self._generate_slab(
             size, element_choices, permute_seed)
+
+        self.initial_atoms.set_calculator(EMT())
+
         self.atoms = self.initial_atoms.copy()
+        
         self.observation_positions = observation_positions
         self.observation_fingerprints = observation_fingerprints
         if self.observation_fingerprints:
@@ -109,11 +114,6 @@ class MCSEnv(gym.Env):
         self.action_idx = int(action['action_type'])
         action_type = ACTION_LOOKUP[self.action_idx]
         
-#         self.trajectories.append(self.atoms.copy())
-#         self.energies.append(self._get_relative_energy())
-#         self.actions.append(self.action_idx)
-#         self.positions.append(self.atoms.get_scaled_positions(wrap=False)[self.free_atoms].tolist())
-        
         reward = 0
         if action_type == 'move':
             self._move_atom(action['atom_selection'], 
@@ -161,6 +161,10 @@ class MCSEnv(gym.Env):
         #Copy the initial atom and reset the calculator
         self.atoms = self.initial_atoms.copy()
         self.atoms.set_calculator(EMT())
+        _calc = self.atoms.get_calculator() # CounterCalc(EMT()) causes an error. This can bypass that error.
+        self.calc = CounterCalc(_calc)
+        self.atoms.set_calculator(self.calc)
+        
         self.initial_energy = self.atoms.get_potential_energy()
         self.highest_energy = 0.0
         
@@ -169,11 +173,13 @@ class MCSEnv(gym.Env):
         self.minima['positions'] = [self.atoms.positions[self.free_atoms,:].copy()]
         self.minima['energies'] = [self._get_relative_energy()]
         self.minima['timesteps'] = [0]
+#         self.minima['force_calls'] = []   
         
         self.TS = {}
         self.TS['positions'] = []
         self.TS['energies'] = []
         self.TS['timesteps'] = []
+#         self.TS['force_calls'] = []
         
         #Set the energy history
         self.history = [(0, 2, 0.)] # (step, action, energy)
@@ -245,7 +251,7 @@ class MCSEnv(gym.Env):
         self.energies.append(self._get_relative_energy())
         self.actions.append(self.action_idx)
         self.positions.append(self.atoms.get_scaled_positions(wrap=False)[self.free_atoms].tolist())
-        
+        self.force_calls = self.calc.force_calls
         prev_step, prev_action, prev_energy = self.history[-1]
         self.history.append((prev_step + 1, action_idx, relative_energy))
         return
@@ -504,7 +510,6 @@ class MCSEnv(gym.Env):
         # Do a quick minimization to relax the structure
         dyn = BFGSLineSearch(atoms=slab, logfile=None)
         dyn.run(0.1)
-        
         elements = np.array(slab.symbols)
         _, idx = np.unique(elements, return_index=True)
         elements = list(elements[np.sort(idx)])
