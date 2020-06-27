@@ -1,6 +1,5 @@
 FROM cschranz/gpu-jupyter
 
-
 RUN conda install --no-channel-priority -c conda-forge seaborn asap3 ase tqdm conda-build braceexpand
 RUN pip install tensorforce
 #RUN pip install asap3 ase tqdm 

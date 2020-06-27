@@ -19,7 +19,9 @@ Surface segregation using Deep Reinforcement Learning
 * ffmpeg from conda has a problem when running in parallel. Best to use `module load ffmpeg`
 
 # Docker notes
-
-* go to docker folder and build with `docker build -t surface_seg .`
+* clone this repo to a folder
+* cd to that folder
 * start a jupyter server on port 10000 with
-  * `docker run --rm -p 10000:8888 -e JUPYTER_ENABLE_LAB=yes -v "$PWD":/home/jovyan/surface_seg surface_seg`
+  * `docker run --rm -p 8888:8888 -e JUPYTER_ENABLE_LAB=yes -v "$PWD":/home/jovyan/surface_seg ulissigroup/surface_seg`
+
+* if you need to rebuild the image, go to the docker folder and `docker build . -t surface_seg`
