@@ -23,7 +23,7 @@ from sklearn.preprocessing import StandardScaler, Normalizer
 
 ACTION_LOOKUP = [
     'move',
-    'transition_state_search',
+#     'transition_state_search',
     'minimize_and_score',
 #     'steepest_descent',
 #     'steepest_ascent'
@@ -56,33 +56,33 @@ class MCSEnv(gym.Env):
         
         self.observation_positions = observation_positions
         self.observation_fingerprints = observation_fingerprints
-        if self.observation_fingerprints:
+#         if self.observation_fingerprints:
             
-            if descriptors is None:
-                Gs = {}
-                Gs["G2_etas"] = np.logspace(np.log10(0.05), np.log10(5.0), num=4)
-                Gs["G2_rs_s"] = [0] * 4
-                Gs["G4_etas"] = [0.005]
-                Gs["G4_zetas"] = [1.0]
-                Gs["G4_gammas"] = [+1.0, -1]
-                Gs["cutoff"] = 6.5
+        if descriptors is None:
+            Gs = {}
+            Gs["G2_etas"] = np.logspace(np.log10(0.05), np.log10(5.0), num=4)
+            Gs["G2_rs_s"] = [0] * 4
+            Gs["G4_etas"] = [0.005]
+            Gs["G4_zetas"] = [1.0]
+            Gs["G4_gammas"] = [+1.0, -1]
+            Gs["cutoff"] = 6.5
 
-                G = copy.deepcopy(Gs)
+            G = copy.deepcopy(Gs)
 
-                # order descriptors for simple_nn
-                cutoff = G["cutoff"]
-                G["G2_etas"] = [a / cutoff**2 for a in G["G2_etas"]]
-                G["G4_etas"] = [a / cutoff**2 for a in G["G4_etas"]]
-                descriptors = (
-                    G["G2_etas"],
-                    G["G2_rs_s"],
-                    G["G4_etas"],
-                    G["cutoff"],
-                    G["G4_zetas"],
-                    G["G4_gammas"],
-                )
-            self.descriptors = descriptors
-            self.snn_params = make_snn_params(self.elements, *descriptors)
+            # order descriptors for simple_nn
+            cutoff = G["cutoff"]
+            G["G2_etas"] = [a / cutoff**2 for a in G["G2_etas"]]
+            G["G4_etas"] = [a / cutoff**2 for a in G["G4_etas"]]
+            descriptors = (
+                G["G2_etas"],
+                G["G2_rs_s"],
+                G["G4_etas"],
+                G["cutoff"],
+                G["G4_zetas"],
+                G["G4_gammas"],
+            )
+        self.descriptors = descriptors
+        self.snn_params = make_snn_params(self.elements, *descriptors)
             
         self.observation_forces = observation_forces
     
@@ -475,6 +475,10 @@ class MCSEnv(gym.Env):
                                             high=np.inf,
                                             shape=(len(self.free_atoms)*fp_length, )),
                                             'positions': spaces.Box(low=-1,
+                                            high=2,
+                                            shape=(len(self.free_atoms)*3,))})
+        elif not(self.observation_fingerprints) and self.observation_positions:
+            observation_space = spaces.Dict({'positions': spaces.Box(low=-1,
                                             high=2,
                                             shape=(len(self.free_atoms)*3,))})
 

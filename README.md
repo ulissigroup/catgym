@@ -21,7 +21,8 @@ Surface segregation using Deep Reinforcement Learning
 # Docker notes
 * clone this repo to a folder
 * cd to that folder
-* start a jupyter server on port 10000 with
-  * `docker run --rm -p 8888:8888 -e JUPYTER_ENABLE_LAB=yes -v "$PWD":/home/jovyan/surface_seg ulissigroup/surface_seg`
+* start a jupyter server on port 8888 with
+  * `docker run --rm -p 8888:8888 --gpus all -e JUPYTER_ENABLE_LAB=yes -e MKL_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e NUMEXPR_NUM_THREADS=1 -e MKL_DEBUG_CPU_TYPE=5 -v "$PWD":/home/jovyan/surface_seg ulissigroup/surface_seg`
+  * most of the threads seem to come from ASAP3 which is only a tiny fraction of the computation time. It's best to disable the threads and just run more parallel instances.
 
 * if you need to rebuild the image, go to the docker folder and `docker build . -t surface_seg`
