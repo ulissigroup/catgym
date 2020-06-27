@@ -17,3 +17,9 @@ Surface segregation using Deep Reinforcement Learning
 # Notes for nersc intallation
 * the same conda installation won't work for CPU and GPU and nodes. Something about ASAP3 calculator 
 * ffmpeg from conda has a problem when running in parallel. Best to use `module load ffmpeg`
+
+# Docker notes
+
+* go to docker folder and build with `docker build -t surface_seg .`
+* start a jupyter server on port 10000 with
+  * `docker run --rm -p 10000:8888 -e JUPYTER_ENABLE_LAB=yes -v "$PWD":/home/jovyan/surface_seg surface_seg`
