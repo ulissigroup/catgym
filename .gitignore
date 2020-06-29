@@ -10,3 +10,9 @@ nohup.out
 *cpython*
 .ipynb_checkpoints
 output.log
+
+# yuyangw
+vid_trpo
+sella.log
+/recorder
+/result_trpo
