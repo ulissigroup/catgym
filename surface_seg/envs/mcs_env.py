@@ -154,6 +154,7 @@ class MCSEnv(gym.Env):
             episode_over = False
 
         #Add the reward for energy before/after 
+        relative_energy = self._get_relative_energy()
         reward += self._get_reward(episode_over)
 
         #Update the history for the rendering

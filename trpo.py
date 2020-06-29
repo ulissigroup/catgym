@@ -82,7 +82,7 @@ agent = Agent.create(
         # Exploration
         exploration=dict(
             type='decaying', unit='timesteps', decay='exponential',
-            initial_value=0.1, decay_steps=max_time*1000, decay_rate=0.1
+            initial_value=0.1, decay_steps=max_timestep*1000, decay_rate=0.1
         ),
         # Regularization
         l2_regularization=0.0, 
