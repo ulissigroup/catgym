@@ -92,9 +92,6 @@ agent = Agent.create(
         
         recorder = dict(
             directory = './recorder/fps', frequency=1),
-        # TensorFlow etc
-        name='agent', device=None, parallel_interactions=1, seed=None, execution=None, saver=None,
-        summarizer=None, recorder=None
     )
     
 
