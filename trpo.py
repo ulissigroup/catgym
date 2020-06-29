@@ -9,14 +9,17 @@ from surface_seg.envs.mcs_env import MCSEnv
 from surface_seg.utils.callback import Callback
 
 
-timesteps = 400
+max_timestep = 200
 
 def setup_env(recording=True):
     
     # Set up gym
-    MCS_gym = MCSEnv(observation_fingerprints=True, 
-                     observation_forces=False,
-                    permute_seed=42)
+    MCS_gym = MCSEnv(
+        observation_fingerprints=True, 
+        observation_forces=False,
+        permute_seed=777,
+        max_timestep=max_timestep
+    )
     
     if recording:
     # Wrap the gym to provide video rendering every 50 steps
@@ -27,7 +30,7 @@ def setup_env(recording=True):
     
     #Convert gym to tensorforce environment
     env = tensorforce.environments.OpenAIGym(MCS_gym,
-                                         max_episode_timesteps=timesteps,
+                                         max_episode_timesteps=max_timestep,
                                          visualize=False)
     
     return env
@@ -43,10 +46,10 @@ agent = Agent.create(
     batch_size=50, 
     learning_rate=1e-3,
     memory = 40000,
-    max_episode_timesteps = timesteps,
+    max_episode_timesteps = max_timestep,
     exploration=dict(
         type='decaying', unit='timesteps', decay='exponential',
-        initial_value=0.1, decay_steps=80000, decay_rate=0.5
+        initial_value=0.1, decay_steps=max_timestep*1000, decay_rate=0.5
     ),
     recorder = dict(
         directory = './recorder/fps', frequency=1), #required for recording states and actions
@@ -54,6 +57,45 @@ agent = Agent.create(
 #         directory = 'tb/fps', labels='all', frequency=, #Tensorboard summarizer
 #     )
 )
+
+agent = Agent.create(
+        agent='ppo', 
+        environment=setup_env(),
+        memory = max_timestep*100,
+        # Automatically configured network
+        network='auto',
+        # Optimization
+        batch_size=64, 
+        update_frequency=2, 
+        learning_rate=5e-4, 
+        subsampling_fraction=0.2,
+        optimization_steps=5,
+        # Reward estimation
+        likelihood_ratio_clipping=0.2, 
+        discount=1.0, 
+        estimate_terminal=False,
+        # Critic
+        critic_network='auto',
+        critic_optimizer=dict(optimizer='adam', multi_step=10, learning_rate=5e-4),
+        # Preprocessing
+        preprocessing=None,
+        # Exploration
+        exploration=dict(
+            type='decaying', unit='timesteps', decay='exponential',
+            initial_value=0.1, decay_steps=max_time*1000, decay_rate=0.1
+        ),
+        # Regularization
+        l2_regularization=0.0, 
+        entropy_regularization=0.0,
+
+        max_episode_timesteps = max_timestep,
+        
+        recorder = dict(
+            directory = './recorder/fps', frequency=1),
+        # TensorFlow etc
+        name='agent', device=None, parallel_interactions=1, seed=None, execution=None, saver=None,
+        summarizer=None, recorder=None
+    )
     
 
 agent_spec = agent.spec
@@ -68,7 +110,7 @@ callback = Callback('./result_trpo/fps', plot_frequency=50).episode_finish
 runner = Runner(
     agent=agent,
     environment=setup_env(recording=True),
-    max_episode_timesteps=timesteps,
+    max_episode_timesteps=max_timestep,
 )
 
 #callback_episode_frequency --> saving results and trajs frequency

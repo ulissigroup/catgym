@@ -115,6 +115,9 @@ class Callback():
         rewards = runner.episode_rewards
         running_times = runner.episode_agent_seconds
         force_calls = results['force_calls']
+
+        # print out after each episode
+        print("Episode: {}, reward: {}, TS energies: {}".format(results['episode'], results['reward'], results['TS_energies']))
         
         with open(os.path.join(log_dir, 'rewards.txt'), 'w') as outfile:
             json.dump(rewards, outfile)

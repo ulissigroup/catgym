@@ -43,9 +43,12 @@ class MCSEnv(gym.Env):
                  observation_fingerprints = True,
                  observation_forces=True,
                  observation_positions = True,
-                 descriptors = None):
+                 descriptors = None,
+                 max_timestep=400):
             
         self.step_size = step_size
+
+        self.max_timestep = max_timestep
         
         self.initial_atoms, self.elements = self._generate_slab(
             size, element_choices, permute_seed)
@@ -137,14 +140,6 @@ class MCSEnv(gym.Env):
 
         #Get the new observation
         observation = self._get_observation()
-
-        #Add the reward for energy before/after 
-        relative_energy = self._get_relative_energy()
-        reward += self._get_reward(relative_energy)
-
-        #Update the history for the rendering
-        self._update_history(self.action_idx, relative_energy)
-        
         
 #         self.atoms.wrap()
 #         Stop if relative energy gets too high
@@ -152,8 +147,18 @@ class MCSEnv(gym.Env):
 #             episode_over = True
 #         else:
 #             episode_over = False
-            
-        episode_over=False
+        
+        if self.timestep >= self.max_timestep:
+            episode_over = True
+        else:
+            episode_over = False
+
+        #Add the reward for energy before/after 
+        reward += self._get_reward(episode_over)
+
+        #Update the history for the rendering
+        self._update_history(self.action_idx, relative_energy)
+        
 
         return observation, reward, episode_over, {}
 
@@ -188,6 +193,9 @@ class MCSEnv(gym.Env):
         self.energies = [self._get_relative_energy()]
         self.actions = [2] # Initially minimized
         self.positions = [self.atoms.get_scaled_positions(wrap=False)[self.free_atoms].tolist()]
+
+        self.timestep = 0
+
         return self._get_observation()
     
 
@@ -292,24 +300,29 @@ class MCSEnv(gym.Env):
       
         return reward
     
-    def _get_reward(self, relative_energy):        
-        reward = 0
+    def _get_reward(self, episode_finish):
+
+        # penalize for increasing energy 
+        curr_energy = self.atoms.get_potential_energy() 
+        relative_energy = curr_energy - self.initial_energy
+
+        reward = -0.05 * max(relative_energy, 0)
         
-#         if relative_energy < 0:
-            # we found a better minima! great!
-    
-        #Give rewards for moving, but reduce the reward for large energies
-        thermal_ratio=relative_energy/self.thermal_energy
-        if thermal_ratio>2:
-            thermal_ratio = 2
-        reward += 1-np.exp(thermal_ratio)
+        if episode_finish:
+            reward -= curr_energy
+
+        # #Give rewards for moving, but reduce the reward for large energies
+        # thermal_ratio=relative_energy/self.thermal_energy
+        # if thermal_ratio>2:
+        #     thermal_ratio = 2
+        # reward += 1-np.exp(thermal_ratio)
         
-        #Add a reward based on the current TS
-        if relative_energy > self.highest_energy:
-            # we just went over a higher transition state! bad!
-            reward += -(relative_energy - self.highest_energy)
-            self.highest_energy = relative_energy
-            
+        # #Add a reward based on the current TS
+        # if relative_energy > self.highest_energy:
+        #     # we just went over a higher transition state! bad!
+        #     reward += -(relative_energy - self.highest_energy)
+        #     self.highest_energy = relative_energy
+        
         return reward
     
     def _check_TS(self):
