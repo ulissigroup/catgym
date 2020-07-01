@@ -23,7 +23,7 @@ from sklearn.preprocessing import StandardScaler, Normalizer
 
 ACTION_LOOKUP = [
     'move',
-#     'transition_state_search',
+    'transition_state_search',
     'minimize_and_score',
 #     'steepest_descent',
 #     'steepest_ascent'
@@ -38,15 +38,31 @@ class MCSEnv(gym.Env):
     def __init__(self, size=(2, 2, 4),
                  element_choices={'Ni': 6, 'Pd': 5, 'Au': 5},
                  permute_seed=None,
+                 save_dir=None,
                  step_size=0.4,
                  temperature = 1200,
                  observation_fingerprints = True,
                  observation_forces=True,
                  observation_positions = True,
-                 descriptors = None):
+                 descriptors = None,
+                 timesteps = None,
+                 save_every = None,
+                 plot_every = None,
+                ):
             
         self.step_size = step_size
+        self.episodes = 0
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        self.save_dir = save_dir
+        self.plot_dir = os.path.join(self.save_dir, 'plots')
+        if not os.path.exists(self.plot_dir):
+            os.makedirs(self.plot_dir)
         
+        self.save_every = save_every
+        self.plot_every = plot_every
+        
+        self.timesteps = timesteps
         self.initial_atoms, self.elements = self._generate_slab(
             size, element_choices, permute_seed)
 
@@ -92,7 +108,7 @@ class MCSEnv(gym.Env):
 
         boltzmann_constant = 8.617e-5 #eV/K
         self.thermal_energy=temperature*boltzmann_constant*len(self.free_atoms)
-        
+        self.temperature = temperature
         # Define the possible actions
         self.action_space = spaces.Dict({'action_type':spaces.Discrete(len(ACTION_LOOKUP)),
                                          'atom_selection': spaces.Discrete(
@@ -145,18 +161,58 @@ class MCSEnv(gym.Env):
         #Update the history for the rendering
         self._update_history(self.action_idx, relative_energy)
         
-        
-#         self.atoms.wrap()
-#         Stop if relative energy gets too high
-#         if relative_energy > self.observation_space['energy'].high[0]:
-#             episode_over = True
-#         else:
-#             episode_over = False
+        if len(self.actions)-1 >= self.timesteps:
+            episode_over = True
+            if self.episodes % self.save_every == 0:
+                self.save_episode()
+                
+            if self.episodes % self.plot_every == 0:
+                self.plot_episode()
+                
+            self.episodes += 1
+        else:
+            episode_over = False
             
-        episode_over=False
-
         return observation, reward, episode_over, {}
-
+    
+    def save_episode(self):
+        save_path = os.path.join(self.save_dir, '%d.npz' %self.episodes)
+        np.savez_compressed(save_path, 
+                 initial_energy = self.initial_energy,
+                 energies = self.energies,
+                 actions = self.actions,
+                 positions = self.positions,
+                 minima_energies = self.minima['energies'],
+                 minima_steps = self.minima['timesteps'],
+                 TS_energies = self.TS['energies'],
+                 TS_steps = self.TS['timesteps'],
+                )
+        return
+    
+    def plot_episode(self):
+        save_path = os.path.join(self.plot_dir, '%d.png' %self.episodes)
+            
+        energies = np.array(self.energies)
+        actions = np.array(self.actions)
+        
+        plt.figure(figsize=(9, 7.5))
+        plt.xlabel('steps')
+        plt.ylabel('energies')
+#         plt.title(xlabel+ ' vs. ' + ylabel)
+        plt.plot(energies, color='black')
+        
+        for action_index in range(len(ACTION_LOOKUP)):
+            action_time = np.where(actions==action_index)[0]
+            plt.plot(action_time, energies[action_time], 'o', 
+                    label=ACTION_LOOKUP[action_index])
+        
+        plt.scatter(self.minima['timesteps'], self.minima['energies'], label='minima', marker='x', color='r', s=180)
+        plt.scatter(self.TS['timesteps'], self.TS['energies'], label='TS', marker='x', color='g', s=180)
+        
+        plt.legend(loc='upper left')
+        plt.savefig(save_path, bbox_inches = 'tight')
+        return plt.close('all')
+    
     def reset(self):
         #Copy the initial atom and reset the calculator
         self.atoms = self.initial_atoms.copy()
