@@ -13,7 +13,7 @@ from ase.calculators.emt import EMT as EMT_orig
 from ase.constraints import FixAtoms
 from ase.optimize.bfgslinesearch import BFGSLineSearch
 from ase.visualize.plot import plot_atoms
-from ase.io import write, read
+from ase.io import write
 from asap3 import EMT
 from surface_seg.utils.countercalc import CounterCalc
 from sella import Sella
@@ -51,17 +51,15 @@ class MCSEnv(gym.Env):
                  timesteps = None,
                  save_every = None,
                  plot_every = None,
+                 multi_env = True,
                 ):
         self.step_size = step_size
-        self.timesteps = timesteps
-
         self.episodes = 0
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         self.history_dir = os.path.join(save_dir, 'history')
         self.plot_dir = os.path.join(save_dir, 'plots')
         self.traj_dir = os.path.join(save_dir, 'trajs')
-        self.minima_dir = os.path.join(save_dir, 'minima.traj')
         if not os.path.exists(self.history_dir):
             os.makedirs(self.history_dir)
         if not os.path.exists(self.plot_dir):
@@ -71,14 +69,19 @@ class MCSEnv(gym.Env):
         
         self.save_every = save_every
         self.plot_every = plot_every
+        self.multi_env = multi_env
         
+        self.timesteps = timesteps
         self.initial_atoms, self.elements = self._generate_slab(
             size, element_choices, permute_seed)
 
         self.initial_atoms.set_calculator(EMT())
-        
-        write(self.minima_dir, self.initial_atoms) # save the initial config as a first local min.
 
+        if not self.multi_env:
+            self.minima_dir = os.path.join(save_dir, 'minima.traj')
+            write(self.minima_dir, self.initial_atoms) # save the initial config as a first local min.
+
+        
         self.atoms = self.initial_atoms.copy()
         
         self.observation_positions = observation_positions
@@ -173,10 +176,13 @@ class MCSEnv(gym.Env):
        
         if len(self.history['actions'])-1 >= self.timesteps:
             episode_over = True
-            self.save_minima()
+            reward += self.evaluate_episode()
+            if not self.multi_env: #Only for single environment
+                self.save_minima() 
+                
             
             if self.episodes % self.save_every == 0:
-                self.save_history()
+                self.save_episode()
                 
             if self.episodes % self.plot_every == 0:
                 self.plot_episode()
@@ -188,7 +194,7 @@ class MCSEnv(gym.Env):
             
         return observation, reward, episode_over, {}
     
-    def save_history(self):
+    def save_episode(self):
         save_path = os.path.join(self.history_dir, '%d.npz' %self.episodes)
         np.savez_compressed(save_path, 
                  initial_energy = self.initial_energy,
@@ -201,6 +207,15 @@ class MCSEnv(gym.Env):
                  TS_steps = self.TS['timesteps'],
                 )
         return
+    def save_traj(self):
+        save_path = os.path.join(self.traj_dir, '%d.traj' %self.episodes)
+
+        trajectories = []
+        for atoms in self.trajectories:
+            atoms.set_calculator(EMT())
+            trajectories.append(atoms)
+        write(save_path, trajectories)
+        return
     
     def save_minima(self):
         if len(self.minima['trajectories']) > 1: #exclude the initial state
@@ -211,18 +226,7 @@ class MCSEnv(gym.Env):
                     minima.append(atoms)
             write(self.minima_dir, minima)
         return
-                                 
     
-    def save_traj(self):
-        save_path = os.path.join(self.traj_dir, '%d.traj' %self.episodes)
-
-        trajectories = []
-        for atoms in self.trajectories:
-            atoms.set_calculator(EMT())
-            trajectories.append(atoms)
-        write(save_path, trajectories)
-
-        return
     def plot_episode(self):
         save_path = os.path.join(self.plot_dir, '%d.png' %self.episodes)
             
@@ -247,6 +251,9 @@ class MCSEnv(gym.Env):
         plt.savefig(save_path, bbox_inches = 'tight')
         return plt.close('all')
     
+    def evaluate_episode(self):    
+        reward = self.timesteps * (len(self.minima['energies'])-1) / self.history['force_calls']
+        return reward
     
     def reset(self):
         #Copy the initial atom and reset the calculator
@@ -262,9 +269,10 @@ class MCSEnv(gym.Env):
         self.minima = {}
         self.minima['positions'] = [self.atoms.positions[self.free_atoms,:].copy()]
         self.minima['energies'] = [self._get_relative_energy()]
+        self.minima['height'] = [0.0]
         self.minima['timesteps'] = [0]
         self.minima['trajectories'] = [self.atoms.copy()]
-        
+
         self.TS = {}
         self.TS['positions'] = []
         self.TS['energies'] = []
@@ -334,9 +342,9 @@ class MCSEnv(gym.Env):
     # Helper functions for above
     def _minimize(self):
         dyn = BFGSLineSearch(atoms=self.atoms, logfile=None)
-        dyn.run(0.03)
+        converged = dyn.run(0.03)
 #         self.num_calculations.append((self.action_idx, dyn.get_number_of_steps()))
-        return 
+        return converged
     
     def _update_history(self, action_idx, relative_energy):
         self.trajectories.append(self.atoms.copy())
@@ -354,9 +362,11 @@ class MCSEnv(gym.Env):
         initial_positions = self.atoms.positions[self.free_atoms,:].copy()
         
         # Minimize and find the new position/energy
-        self._minimize()
+        previous_energy = self._get_relative_energy()
+        converged = self._minimize()
         current_positions = self.atoms.positions[self.free_atoms,:].copy()
         current_energy = self._get_relative_energy()
+        minima_height = previous_energy - current_energy
         
         #Get the distance from the new minima to every other found minima
         distances = [np.max(np.linalg.norm(current_positions-positions,1)) for positions in self.minima['positions']]
@@ -364,11 +374,12 @@ class MCSEnv(gym.Env):
         
         #If the distance is non-trivial, add it to the list and score it
 #         if np.min(distances)>0.2 or np.min(energy_differences)>0.1:
-        if np.min(energy_differences)>0.05:
+        if np.min(energy_differences)>0.05 and converged:
 #             print('found a new local minima! distance=%1.2f w energy %1.2f'%(np.min(distances), current_energy))
             
             self.minima['positions'].append(current_positions)
             self.minima['energies'].append(current_energy)
+            self.minima['height'].append(minima_height)
             self.minima['timesteps'].append(self.history['timesteps'][-1] + 1)
             self.minima['trajectories'].append(self.atoms.copy())
             
@@ -376,13 +387,13 @@ class MCSEnv(gym.Env):
 #             reward = np.min(energy_differences)/len(self.minima['timesteps']) * self.temperature * (self.highest_energy - current_energy)
             thermal_ratio=current_energy/self.thermal_energy
             thermal_threshold = 3
-            reward += (max(thermal_threshold*self.thermal_energy, self.highest_energy - current_energy) + np.exp(-thermal_ratio))
+            reward += max(previous_energy/self.thermal_energy, thermal_threshold*self.thermal_energy)
             self.highest_energy = current_energy
         #otherwise, reset the atoms positions since the minimization didn't do anything interesting
         else:
             self.atoms.positions[self.free_atoms,:]=initial_positions
             # Penalizing the model when it triggered minimzation but not find new local minima (wasted time)
-            reward -= min(1, current_energy)
+            reward -= min(previous_energy/self.thermal_energy, thermal_threshold*self.thermal_energy)
       
         return reward
     
@@ -393,19 +404,15 @@ class MCSEnv(gym.Env):
         thermal_threshold = 3
         
         if thermal_ratio > thermal_threshold:
-            thermal_ratio = thermal_threshold
-            reward -= 1-np.exp(-thermal_ratio)
+            reward -= relative_energy/self.thermal_energy
             if relative_energy > self.highest_energy:
-                reward -= min((self.highest_energy - relative_energy), 1)     
-        else:
-            reward += 1-np.exp(-thermal_ratio)
+                reward -= (self.highest_energy - relative_energy)/self.thermal_energy
         
         if relative_energy > self.highest_energy:
             self.highest_energy = relative_energy
 
-        if relative_energy < 0:
-            reward += (thermal_threshold*self.thermal_energy + np.exp(-thermal_ratio))
-            
+#         if relative_energy < 0:
+#             reward += ?
         return reward
     
     def _check_TS(self):
@@ -415,7 +422,7 @@ class MCSEnv(gym.Env):
         initial_energy = self._get_relative_energy()
         
         # Minimize and find the new position/energy
-        self._transition_state_search()
+        converged = self._transition_state_search()
         current_positions = self.atoms.positions[self.free_atoms,:].copy()
         current_energy = self._get_relative_energy()
         
@@ -429,12 +436,12 @@ class MCSEnv(gym.Env):
 
             #If the distance is non-trivial, add it to the list and score it
 #             if np.min(distances)>0.2 or np.min(energy_differences)>0.1:
-            if np.min(energy_differences)>0.05:
+            if np.min(energy_differences)>0.05:# and converged:
                 self._record_TS()
 
             else:
                 # Penalizing the model when it triggered Ts search but not find new TS(wasted time)
-                reward -= min(1, current_energy)
+                reward -= min(previous_energy/self.thermal_energy, thermal_threshold*self.thermal_energy)
                 self.atoms.positions[self.free_atoms,:]=initial_positions
         return
     
@@ -444,7 +451,8 @@ class MCSEnv(gym.Env):
             
 #         prev_step, prev_action, prev_energy = self.history[-1]
         self.TS['timesteps'].append(self.history['timesteps'][-1] + 1)
-        
+        return 
+    
     def _transition_state_search(self):
         fix = self.atoms.constraints[0].get_indices()
         dyn = Sella(self.atoms,  # Your Atoms object
@@ -452,9 +460,9 @@ class MCSEnv(gym.Env):
 #                     trajectory='saddle.traj',  # Optional trajectory,
                     logfile='sella.log'
                     )
-        dyn.run(1e-2, steps=10)
+        converged = dyn.run(1e-2, steps=10)
 #         self.num_calculations.append((self.action_idx, dyn.get_number_of_steps()))
-        return 
+        return converged
     
     def _get_relative_energy(self):
         return self.atoms.get_potential_energy() - self.initial_energy
