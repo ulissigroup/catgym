@@ -13,7 +13,7 @@ from ase.calculators.emt import EMT as EMT_orig
 from ase.constraints import FixAtoms
 from ase.optimize.bfgslinesearch import BFGSLineSearch
 from ase.visualize.plot import plot_atoms
-from ase.io import write
+from ase.io import write, read
 from asap3 import EMT
 from surface_seg.utils.countercalc import CounterCalc
 from sella import Sella
@@ -179,7 +179,6 @@ class MCSEnv(gym.Env):
             reward += self.evaluate_episode()
             if not self.multi_env: #Only for single environment
                 self.save_minima() 
-                
             
             if self.episodes % self.save_every == 0:
                 self.save_episode()
@@ -252,7 +251,8 @@ class MCSEnv(gym.Env):
         return plt.close('all')
     
     def evaluate_episode(self):    
-        reward = self.timesteps * (len(self.minima['energies'])-1) / self.history['force_calls']
+        reward = 0
+        reward += self.timesteps * (len(self.minima['energies'])-1) / self.history['force_calls']
         return reward
     
     def reset(self):
@@ -264,6 +264,8 @@ class MCSEnv(gym.Env):
         self.atoms.set_calculator(self.calc)
         self.initial_energy = self.atoms.get_potential_energy()
         self.highest_energy = 0.0
+        self.thermal_threshold = 3
+        
         
         #Set the list of identified positions
         self.minima = {}
@@ -384,16 +386,14 @@ class MCSEnv(gym.Env):
             self.minima['trajectories'].append(self.atoms.copy())
             
 #             reward=1000-current_energy*100+100*np.exp(-np.min(distances))
-#             reward = np.min(energy_differences)/len(self.minima['timesteps']) * self.temperature * (self.highest_energy - current_energy)
             thermal_ratio=current_energy/self.thermal_energy
-            thermal_threshold = 3
-            reward += max(previous_energy/self.thermal_energy, thermal_threshold*self.thermal_energy)
+            reward += max(previous_energy/self.thermal_energy, self.thermal_threshold*self.thermal_energy)
             self.highest_energy = current_energy
         #otherwise, reset the atoms positions since the minimization didn't do anything interesting
         else:
             self.atoms.positions[self.free_atoms,:]=initial_positions
             # Penalizing the model when it triggered minimzation but not find new local minima (wasted time)
-            reward -= min(previous_energy/self.thermal_energy, thermal_threshold*self.thermal_energy)
+            reward -= min(previous_energy/self.thermal_energy, self.thermal_threshold*self.thermal_energy)
       
         return reward
     
@@ -401,9 +401,8 @@ class MCSEnv(gym.Env):
         reward = 0
         
         thermal_ratio=relative_energy/self.thermal_energy
-        thermal_threshold = 3
         
-        if thermal_ratio > thermal_threshold:
+        if thermal_ratio > self.thermal_threshold:
             reward -= relative_energy/self.thermal_energy
             if relative_energy > self.highest_energy:
                 reward -= (self.highest_energy - relative_energy)/self.thermal_energy
@@ -422,9 +421,11 @@ class MCSEnv(gym.Env):
         initial_energy = self._get_relative_energy()
         
         # Minimize and find the new position/energy
+        previous_energy = self._get_relative_energy()
         converged = self._transition_state_search()
         current_positions = self.atoms.positions[self.free_atoms,:].copy()
         current_energy = self._get_relative_energy()
+        
         
         #Get the distance from the new minima to every other found minima
         if len(self.TS['energies'])==0:
@@ -441,7 +442,7 @@ class MCSEnv(gym.Env):
 
             else:
                 # Penalizing the model when it triggered Ts search but not find new TS(wasted time)
-                reward -= min(previous_energy/self.thermal_energy, thermal_threshold*self.thermal_energy)
+                reward -= min(previous_energy/self.thermal_energy, self.thermal_threshold*self.thermal_energy)
                 self.atoms.positions[self.free_atoms,:]=initial_positions
         return
     
@@ -460,7 +461,7 @@ class MCSEnv(gym.Env):
 #                     trajectory='saddle.traj',  # Optional trajectory,
                     logfile='sella.log'
                     )
-        converged = dyn.run(1e-2, steps=10)
+        converged = dyn.run(1e-2, steps=30)
 #         self.num_calculations.append((self.action_idx, dyn.get_number_of_steps()))
         return converged
     
