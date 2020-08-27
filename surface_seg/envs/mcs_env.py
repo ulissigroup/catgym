@@ -213,7 +213,8 @@ class MCSEnv(gym.Env):
         
     
     def save_episode(self):
-        save_path = os.path.join(self.history_dir, '%d_%f.npz' %(self.episodes, self.minima['energies'][self.min_idx]))
+        save_path = os.path.join(self.history_dir, '%d_%f_%f_%f.npz' %(self.episodes, self.minima['energies'][self.min_idx],
+                                                                   self.initial_energy, self.highest_energy))
         np.savez_compressed(save_path, 
                  initial_energy = self.initial_energy,
                  energies = self.history['energies'],
@@ -244,7 +245,8 @@ class MCSEnv(gym.Env):
         return
     
     def save_traj(self):      
-        save_path = os.path.join(self.traj_dir, '%d_%f_full.traj' %(self.episodes, self.minima['energies'][self.min_idx]))
+        save_path = os.path.join(self.traj_dir, '%d_%f_%f_%f_full.traj' %(self.episodes, self.minima['energies'][self.min_idx]
+                                                                      , self.initial_energy, self.highest_energy))
 
         trajectories = []
         for atoms in self.trajectories:
@@ -261,7 +263,7 @@ class MCSEnv(gym.Env):
                 for i, atoms in enumerate(self.minima['trajectories']):
                     atoms.set_calculator(EMT())
                     minima.append(atoms)
-                write(os.path.join(self.traj_dir, '%d_%f_minima.traj' %(self.episodes, self.minima['energies'][self.min_idx])), minima)
+                write(os.path.join(self.traj_dir, '%d_%f_%f_%f_minima.traj' %(self.episodes, self.minima['energies'][self.min_idx], self.initial_energy, self.highest_energy)), minima)
 #             if len(self.TS['trajectories']) > 0:
 #                 TS = []
 #                 for i, atoms in enumerate(self.TS['trajectories']):
@@ -287,7 +289,8 @@ class MCSEnv(gym.Env):
         return
     
     def plot_episode(self):
-        save_path = os.path.join(self.plot_dir, '%d_%f.png' %(self.episodes, self.minima['energies'][self.min_idx]))
+        save_path = os.path.join(self.plot_dir, '%d_%f_%f_%f.png' %(self.episodes, self.minima['energies'][self.min_idx]
+                                                                , self.initial_energy, self.highest_energy))
             
         energies = np.array(self.history['energies'])
         actions = np.array(self.history['actions'])
@@ -351,7 +354,7 @@ class MCSEnv(gym.Env):
         self.move['trajectories'] = []
 
         #Set the energy history
-        results = ['timesteps', 'energies', 'actions', 'positions', 'scaled_positions', 'fingerprints', 'scaled_fingerprints']
+        results = ['timesteps', 'energies','actions', 'positions', 'scaled_positions', 'fingerprints', 'scaled_fingerprints']
         self.history = {}
         for item in results:
             self.history[item] = []
@@ -743,7 +746,16 @@ class MCSEnv(gym.Env):
         c = FixAtoms(indices=[atom.index for atom in slab if atom.position[2] < np.mean(
             slab.positions[:, 2])])  # Fix two layers
         slab.set_constraint(c)
+        
+        # reset the random seed for randomize initial configurations
+        np.random.seed(None)
+        fixed_atoms_idx = c.get_indices()
+        free_atoms_idx = list(set(np.arange(len(element_list))) ^ set(fixed_atoms_idx))
+        free_atoms = element_list[free_atoms_idx]
+        random_free_atoms = np.random.permutation(free_atoms)
+        new_element_list = list(element_list[fixed_atoms_idx]) + list(random_free_atoms)
 
+        slab.set_chemical_symbols(new_element_list)        
         # Do a quick minimization to relax the structure
         dyn = BFGSLineSearch(atoms=slab, logfile=None)
         dyn.run(0.1)
