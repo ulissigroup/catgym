@@ -11,6 +11,12 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 from surface_seg.envs.symmetry_function import make_snn_params
 
+
+def movingaverage(values, window):
+    weights = np.repeat(1.0, window)/window
+    sma = np.convolve(values, weights, 'valid')
+    return sma
+
 class Callback():
     def __init__(self, log_dir=None):
         self.log_dir = log_dir
@@ -21,6 +27,12 @@ class Callback():
         plt.ylabel(ylabel)
         plt.title(ylabel+ ' vs. ' + xlabel)
         plt.plot(plotting_values)
+        
+        window = 25
+        if len(plotting_values) > window:
+            steps = np.arange(len(plotting_values))
+            yMA = movingaverage(plotting_values, window)
+            plt.plot(steps[len(steps)-len(yMA):], yMA)
         plt.savefig(save_path, bbox_inches = 'tight')
         return plt.close('all')
     
@@ -36,3 +48,5 @@ class Callback():
         reward_path = os.path.join(log_dir, 'rewards.png')
         self.plot_summary(rewards, 'episodes', 'reward', reward_path)
         return True
+        
+    
