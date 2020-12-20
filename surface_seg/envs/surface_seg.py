@@ -182,7 +182,7 @@ class MCSEnv(gym.Env):
             converged = self.dyn_TS.run(0.03)#, steps=self.steps)
             self.TS_atoms = self.atoms.copy()
 
-        elif self.action_idx == 2:
+        elif ACTION_LOOKUP[self.action_idx] == 'Min':
             if self.found_TS == 1: 
                 self.H = self.TS_H.copy()
                 eig, V = np.linalg.eigh(self.H)
