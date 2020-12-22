@@ -186,7 +186,10 @@ class MCSEnv(gym.Env):
             if self.found_TS == 1: 
                 self.H = self.TS_H.copy()
                 eig, V = np.linalg.eigh(self.H)
-                direction = np.sign(np.dot((self.initial_positions - self.atoms.positions).reshape(-1), V[:,0]))
+                a = (self.initial_positions - self.atoms.positions).reshape(-1)
+                b = V[:,0]
+                direction = np.dot(a, b)
+                angle = math.acos(dirction/np.linalg.norm(a)/np.linalg.norm(b))
                 # Move away from the initial point
                 dr =  direction * V[:,0].reshape(-1,3)
                 self.atoms.set_positions(self.TS['positions'][-1] - dr)
