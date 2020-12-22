@@ -191,7 +191,8 @@ class MCSEnv(gym.Env):
                 direction = np.dot(a, b)
                 angle = math.acos(dirction/np.linalg.norm(a)/np.linalg.norm(b))
                 # Move away from the initial point
-                dr =  direction * V[:,0].reshape(-1,3)
+#                 dr =  direction * V[:,0].reshape(-1,3)
+                dr =  np.sign(direction) * V[:,0].reshape(-1,3)
                 self.atoms.set_positions(self.TS['positions'][-1] - dr)
 #                 self.atoms.set_positions(self.atoms.get_positions() - dr)
 
