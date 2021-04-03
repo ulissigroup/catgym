@@ -32,7 +32,7 @@ Surface segregation using Deep Reinforcement Learning
 
 [**Reinforcement Learning for Identifying Metastable Catalysts**]() </br>
 Junwoong Yoon*, Zhonglin Cao*, Rajesh Raju*, Yuyang Wang, Robert Burnley, Andrew J. Gellman, Amir Barati Farimani<sup>+</sup>, Zachary W. Ulissi<sup>+</sup> </br>
-(* equal contribution, <sup>+</sup> corresponding authors) <br/>
+(*equal contribution, <sup>+</sup>corresponding authors) <br/>
 Carnegie Mellon University
 
 [[arXiv]]() [[PDF]]()
@@ -68,7 +68,7 @@ $ pip install cffi pyyaml tqdm braceexpand
 $ pip install --no-deps git+https://github.com/MDIL-SNU/SIMPLE-NN.git
 ```
 
-4. Install our package
+4. Install other packages
 ```
 $ python setup.py develop
 ```
