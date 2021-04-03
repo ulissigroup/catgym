@@ -37,7 +37,7 @@ Carnegie Mellon University
 
 [[arXiv]]() [[PDF]]()
 
-<img src="figs/pipeline.png" width="500">
+<img src="figs/pipeline.png" width="650">
 
 If you find this work useful in your research, please cite:
 
@@ -101,7 +101,7 @@ To use the gym-based surface segragation environments, please refer to `surface_
 
 ## Results
 
-<img src="figs/NEB_DRL.png" width="500">
+<img src="figs/NEB_DRL.png" width="650">
 
 (a) An example energy pathway to a global minimum developed by DRl method. Each data point represents the relative energy $\Delta E$ of an Ni-Pd-Au configuration generated after taking a certain action at each timestep. (b) A minimum energy pathway, created by NEB, to the same global minimum. (c) Ni(green)-Pd(blue)-Au(gold) configurations of the initial state, transitions states built by DRL method and NEB, and the global minimum.
 
