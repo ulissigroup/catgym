@@ -27,7 +27,7 @@ Surface segregation using Deep Reinforcement Learning
   * Password for JupyterLab is `asdf`
 
 * if you need to rebuild the image, go to the docker folder and `docker build . -t surface_seg` -->
-* 
+
 # Reinforcement Learning for Identifying Metastable Catalysts
 
 [**Reinforcement Learning for Identifying Metastable Catalysts**]() </br>

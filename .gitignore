@@ -10,3 +10,5 @@ nohup.out
 *cpython*
 .ipynb_checkpoints
 output.log
+
+!figs/*.png
