@@ -37,7 +37,7 @@ Carnegie Mellon University
 
 [[arXiv]]() [[PDF]]()
 
-<img src="figs/pipeline.png" width="650">
+<img src="figs/pipeline.png" width="750">
 
 If you find this work useful in your research, please cite:
 
@@ -91,13 +91,17 @@ $ docker build . -t surface_seg
 - The same conda installation won't work for CPU and GPU and nodes. Something about ASAP3 calculator.
 - ffmpeg from conda has a problem when running in parallel. Best to use `module load ffmpeg`.
 
-##  Training 
+## Environments
+
+To use the gym-based surface segragation environments, please refer to `surface_seg/envs`.
+
+## Training 
 
 To train a DRL agent for finding a surface segregation trajectory. Please run the file `examples/notebooks/run_surface_seg.ipynb`.
 
-## Environments
+## Pre-trained DRL Agent
 
-To use the gym-based surface segragation environments, please refer to `surface_seg\envs`.
+To use a pre-trained DRL agent, ...
 
 ## Results
 
