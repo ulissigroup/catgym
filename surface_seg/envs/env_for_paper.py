@@ -32,8 +32,6 @@ ACTION_LOOKUP = [
     'move',
     'transition_state_search',
     'minimize_and_score',
-#     'steepest_descent',
-#     'steepest_ascent'
 ]
 
 DIRECTION =[np.array([1,0,0]),
@@ -65,24 +63,10 @@ class MCSEnv(gym.Env):
                  save_every = None,
                  save_every_min = None,
                  plot_every = None,
-                 multi_env = True,
-                 random_initial = False,
-                 global_min_fps = None,
-                 global_min_pos = None, 
-                 Au_sublayer = False,
-                 worse_initial = False,
-                 random_free_atoms = None,
-                 structure_idx = None,
-                 different_initial=None,
                  
                 ):
-        self.different_initial = different_initial
-        self.structure_idx = structure_idx
-        self.random_free_atoms = random_free_atoms
+        
         self.save_every_min = save_every_min
-        self.worse_initial = worse_initial
-        self.Au_sublayer = Au_sublayer
-        self.random_initial = random_initial
         self.step_size = step_size
         self.thermal_threshold = thermal_threshold
         self.permute_seed = permute_seed
@@ -105,12 +89,12 @@ class MCSEnv(gym.Env):
         
         self.save_every = save_every
         self.plot_every = plot_every
-        self.multi_env = multi_env
         
         self.timesteps = timesteps
         self.initial_atoms, self.snn_params = self._get_initial_slab()
         self.initial_atoms.set_calculator(EMT())
-            
+        self.initial_positions = self.initial_atoms.get_positions()
+
         # Mark the free atoms
         self.free_atoms = list(set(range(len(self.initial_atoms))) -
                                set(self.initial_atoms.constraints[0].get_indices()))
@@ -120,12 +104,6 @@ class MCSEnv(gym.Env):
         
         self.relative_energy = 0.0# self._get_relative_energy()
         self.initial_forces = self.initial_atoms.get_forces()[self.free_atoms]
-        if not self.multi_env:
-            self.minima_dir = os.path.join(save_dir, 'minima.traj')
-            self.TS_dir = os.path.join(save_dir, 'TS.traj')
-            write(self.minima_dir, self.initial_atoms) # save the initial config as a first local min.
-            write(self.TS_dir, self.initial_atoms) # save the initial config as a first local min.
-
         
         self.atoms = self.initial_atoms.copy()
         
@@ -166,7 +144,8 @@ class MCSEnv(gym.Env):
 
       # open AI gym API requirements
     def step(self, action):
-        
+        reward = 0
+
         self.action_idx = action['action_type']
         self.steps = 50
         
@@ -179,27 +158,49 @@ class MCSEnv(gym.Env):
        
         self.previous_atoms = self.atoms.copy()
         previous_energy = self._get_relative_energy()
-
+        previous_force = np.max(np.abs(self.atoms.get_forces()[8:]))
         self.done= False
         episode_over = False
-        reward = 0
+
+        save_path_min = None
+        save_path_ts = None
+        save_path_md = None
         
         if self.action_idx == 0:
             initial_positions = self.atoms.positions[np.array(self.free_atoms)[self.atom_selection],:].copy()
             self.atoms.positions[np.array(self.free_atoms)[self.atom_selection],:] = initial_positions + self.movement
+
         elif self.action_idx == 1:
-            converged = self._transition_state_search()
-        elif self.action_idx == 2:
-            dyn = BFGSLineSearch(atoms=self.atoms, logfile=None)
-            converged = dyn.run(0.03)
-        elif self.action_idx == 3:    
-            dyn = Langevin(self.atoms, 5 * units.fs, units.kB * self.temperature, 0.01, trajectory=None) # 5 fs --> 20 fs
+#             dyn = self._transition_state_search()
+            fix = self.atoms.constraints[0].get_indices()
+            self.dyn = Sella(self.atoms,  # Your Atoms object
+                        constraints=dict(fix=fix),  # Your constraints
+                        trajectory=save_path_ts,  # Optional trajectory,
+                        logfile='sella.log'
+                        )
+            converged = self.dyn.run(0.03)#, steps = self.steps)#, steps=self.steps)
+            
+            self.TS_atoms = self.atoms.copy()
+
+            
+#         elif self.action_idx == 2:
+#             dyn = BFGSLineSearch(atoms=self.atoms, logfile=None, trajectory=save_path_min)
+#             converged = dyn.run(0.05)
+
+
+        elif self.action_idx == 3:   
+            np.random.seed(None)
+            dyn = Langevin(self.atoms, 5 * units.fs, units.kB * self.temperature, 0.01, trajectory=save_path_md) # 5 fs --> 20
             converged = dyn.run(self.steps) 
+
 
         #Add the reward for energy before/after 
         self.relative_energy = self._get_relative_energy()
-        reward += self._get_reward(self.relative_energy, previous_energy)
+#         self.history, self.trajectories = self._update_history(self.action_idx, self.relative_energy)
 
+        if self.action_idx != 4:
+            reward += self._get_reward(self.relative_energy, previous_energy)
+        
         #Get the new observation
         observation = self._get_observation()
         
@@ -208,6 +209,7 @@ class MCSEnv(gym.Env):
             episode_over = True
 
         #Update the history for the rendering
+        self.relative_energy = self._get_relative_energy()
         self.history, self.trajectories = self._update_history(self.action_idx, self.relative_energy)
         self.episode_reward += reward
         
@@ -217,30 +219,20 @@ class MCSEnv(gym.Env):
         if episode_over:
             self.total_force_calls += self.calc.force_calls
             self.min_idx = int(np.argmin(self.minima['energies']))
-
             if self.episodes % self.save_every == 0:
                 self.save_episode()
                 self.save_traj()
                 
             if self.episodes % self.save_every_min == 0:
-                if 1 in self.minima['segregation']:
+                if len(self.minima['segregation']) > 0:
+#                 if len(self.TS['energies']) > 1:
                     self.save_episode()
                     self.save_traj()
                     
             self.episodes += 1
             
         return observation, reward, episode_over, {}
-    
-    def _get_new_initial_atoms(self):
-        new_initial_atoms = self.atoms.copy()
-        new_initial_atoms.set_calculator(self.calc)
-        offset = self.atoms.get_scaled_positions(wrap=True)[self.free_atoms,:] - self.atoms.get_scaled_positions(wrap=False)[self.free_atoms,:]
-        correction = offset @ self.atoms.get_cell().reshape(3,3)
-        new_initial_atoms.positions[self.free_atoms,:] = self.atoms.positions[self.free_atoms,:] + correction
-        
-        assert np.abs(new_initial_atoms.get_potential_energy() - self.atoms.get_potential_energy()) < 1e-5
-        return new_initial_atoms
-    
+
     def _get_initial_slab(self):
         self.initial_atoms, self.elements = self._generate_slab(
             self.size, self.element_choices, self.permute_seed)
@@ -275,45 +267,30 @@ class MCSEnv(gym.Env):
         save_path = os.path.join(self.history_dir, '%d_%f_%f_%f.npz' %(self.episodes, self.minima['energies'][self.min_idx],
                                                                    self.initial_energy, self.highest_energy))
         np.savez_compressed(save_path, 
-                 initial_energy = self.initial_energy,
-                 energies = self.history['energies'],
-                 actions = self.history['actions'],
-                 positions = self.history['positions'],
-                 scaled_positions = self.history['scaled_positions'],
-                 minima_energies = self.minima['energies'],
-                 minima_steps = self.minima['timesteps'],
-                 TS_energies = self.TS['energies'],
-                 TS_steps = self.TS['timesteps'],
-                 force_calls = self.history['force_calls'],
-                 reward = self.episode_reward,
-                 forces = self.history['forces']
-                )
-        if self.observation_fingerprints:
-            np.savez_compressed(save_path, 
-                 initial_energy = self.initial_energy,
-                 energies = self.history['energies'],
-                 actions = self.history['actions'],
+             initial_energy = self.initial_energy,
+             energies = self.history['energies'],
+             actions = self.history['actions'],
 #                  atom_selection = self.history['atom_selection'],
 #                  movement = self.history['movement'],
 #                  positions = self.history['positions'],
-                 scaled_positions = self.history['scaled_positions'],
-                 fingerprints = self.history['fingerprints'],
-                initial_fps = self.history['initial_fps'],
+             scaled_positions = self.history['scaled_positions'],
+             fingerprints = self.history['fingerprints'],
+            initial_fps = self.history['initial_fps'],
 #                  scaled_fingerprints = self.history['scaled_fingerprints'],
-                 minima_energies = self.minima['energies'],
-                 minima_steps = self.minima['timesteps'],
-                minima_TS = self.minima['TS'],
-                minima_highest_energyy = self.minima['highest_energy'],
-                segregation = self.minima['segregation'],
+             minima_energies = self.minima['energies'],
+             minima_steps = self.minima['timesteps'],
+            minima_TS = self.minima['TS'],
+            minima_highest_energyy = self.minima['highest_energy'],
+            segregation = self.minima['segregation'],
 #                  TS_energies = self.TS['energies'],
 #                  TS_steps = self.TS['timesteps'],
-                 force_calls = self.history['force_calls'],
-                 total_force_calls = self.total_force_calls,
-                 reward = self.episode_reward,
-                 atomic_symbols = self.random_free_atoms,
-                 structure_idx = [self.structure_idx],
-#                  forces = self.history['forces']
-                )
+             force_calls = self.history['force_calls'],
+             total_force_calls = self.total_force_calls,
+             reward = self.episode_reward,
+             episode = self.episodes,
+#                  forces = self.history['forces'],
+
+            )
         return
     
     def save_traj(self):      
@@ -326,57 +303,7 @@ class MCSEnv(gym.Env):
         write(save_path, trajectories)
         
         return
-    
-    def save_minima_TS(self):
-        if self.multi_env:           
-            if len(self.minima['trajectories']) > 1:
-                minima = []
-                for i, atoms in enumerate(self.minima['trajectories']):
-                    atoms.set_calculator(EMT())
-                    minima.append(atoms)
-                write(os.path.join(self.traj_dir, '%d_%f_%f_%f_minima.traj' %(self.episodes, self.minima['energies'][self.min_idx], self.initial_energy, self.highest_energy)), minima)
-               
-        else:
-            if len(self.minima['trajectories']) > 1: #exclude the initial state
-                minima = read(self.minima_dir, index=':')
-                for i, atoms in enumerate(self.minima['trajectories']):
-                    if i != 0:
-                        atoms.set_calculator(EMT())
-                        minima.append(atoms)
-                write(self.minima_dir, minima)
-        return
-    
-    def plot_episode(self):
-        save_path = os.path.join(self.plot_dir, '%d_%f_%f_%f.png' %(self.episodes, self.minima['energies'][self.min_idx]
-                                                                , self.initial_energy, self.highest_energy))
-            
-        energies = np.array(self.history['energies'])
-        actions = np.array(self.history['actions'])
-        
-        plt.figure(figsize=(9, 7.5))
-        plt.xlabel('steps')
-        plt.ylabel('energies')
-        plt.plot(energies, color='black')
-        
-        for action_index in range(len(ACTION_LOOKUP)):
-            action_time = np.where(actions==action_index)[0]
-            plt.plot(action_time, energies[action_time], 'o', 
-                    label=ACTION_LOOKUP[action_index])
-        
-        plt.scatter(self.minima['timesteps'], self.minima['energies'], label='minima', marker='x', color='r', s=180)
-        plt.scatter(self.TS['timesteps'], self.TS['energies'], label='TS', marker='x', color='g', s=180)
-        
-        plt.legend(loc='upper left')
-        plt.savefig(save_path, bbox_inches = 'tight')
-        return plt.close('all')
-    
-    def evaluate_episode(self):    
-        reward = 0
-#         reward += max(self.thermal_threshold, self.highest_energy) * len(self.minima['energies'])
-        
-        return reward
-    
-    
+
     def reset(self):
         #Copy the initial atom and reset the calculator
         if os.path.exists('sella.log'):
@@ -398,10 +325,11 @@ class MCSEnv(gym.Env):
         self.episode_reward = 0
         self.total_steps = self.timesteps
         self.max_height = 0
-        
+        self.action_idx = 0
+      
         #Set the list of identified positions
         self.minima = {}
-        self.minima['positions'] = [self.atoms.positions[self.free_atoms,:].copy()]
+        self.minima['positions'] = [self.atoms.positions.copy()]
         self.minima['energies'] = [0.0]
         self.minima['height'] = [0.0]
         self.minima['timesteps'] = [0]
@@ -411,11 +339,21 @@ class MCSEnv(gym.Env):
         self.minima['segregation'] = []
         
         self.TS = {}
-        self.TS['positions'] = []
+        self.TS['positions'] = [self.atoms.positions[self.free_atoms,:].copy()]
         self.TS['energies'] = [0.0]
         self.TS['timesteps'] = []
         self.TS['trajectories'] = []
 
+        self.found_TS = 0
+        
+        self.min_traj = [self.atoms.copy()]
+        self.min_energies = [0]
+        self.ts_traj = [self.atoms.copy()]
+        self.ts_energies = [0]
+        self.md_traj = [self.atoms.copy()]
+        self.md_energies = [0]
+        
+        
         self.move = {}
         self.move['trajectories'] = []
 
@@ -515,8 +453,34 @@ class MCSEnv(gym.Env):
             self.history['fingerprints'] = self.history['fingerprints'] + [self.fps.tolist()]
             self.history['initial_fps'] = self.history['initial_fps'] + [self.episode_initial_fps.tolist()]
         return self.history, self.trajectories
-        
 
+    def determine_step(self, dr, steplengths):
+        maxstep = 0.2
+        maxsteplength = np.max(steplengths)
+        if maxsteplength >= maxstep:
+            scale = maxstep / maxsteplength
+            dr *= scale
+
+        return dr
+    
+    
+    def hessian_step(self):
+        r0 = self.atoms.get_positions().reshape(-1)
+        f0 = self.atoms.get_forces().reshape(-1)
+        dr = np.linalg.inv(self.H) @ f0
+        dr = dr.reshape(-1,3)
+        return dr
+    
+    def hessian_update(self, r0, f0):
+        r = self.atoms.get_positions().reshape(-1)
+        f = self.atoms.get_forces().reshape(-1)
+        df = f-f0
+        dr = r-r0
+        a = np.dot(dr,df)
+        dg = np.dot(self.H, dr)
+        b = np.dot(dr, dg)
+        self.H -= np.outer(df,df)/a + np.outer(dg,dg)/b
+        return
     
     def _get_reward(self, relative_energy, previous_energy):        
         reward = 0
@@ -526,8 +490,16 @@ class MCSEnv(gym.Env):
         if relative_energy > self.highest_energy:
             self.highest_energy = relative_energy
 
-        
+        if thermal_ratio > self.thermal_threshold:
+            reward -= thermal_ratio
+        #             if len(self.TS['energies']) > 1:
+        #                 self.atoms.positions[self.free_atoms,:] = self.TS['positions'][-1]     
+        #                 self.relative_energy = self.TS['energies'][-1]    
+        #             else:
+            self.done = True
+
         self.fps, self.fp_length = self._get_fingerprints(self.atoms)
+        self.orig_positions = self.atoms.get_positions().copy()
         self.positions = self.atoms.get_scaled_positions(wrap=False)[self.free_atoms]
         
         relative_fps = self.fps - self.episode_initial_fps
@@ -535,49 +507,100 @@ class MCSEnv(gym.Env):
         if np.max(np.array(self.positions)[:,2]) > self.max_height:
             self.max_height = np.max(np.array(self.positions)[:,2])
     
-        if self.action_idx == 2: # Minimization
-            minima_differences = np.abs(relative_energy-np.array(self.minima['energies']))
-            
-            if np.min(minima_differences) < 0.05:
-                if self.highest_energy/self.thermal_energy > self.thermal_threshold / 2:
-    #                 self.done = True
-    #                 reward += 10 / self.highest_energy
-#                     reward -= self.highest_energy - self.TS['energies'][-1]
-#                     self.atoms.positions[self.free_atoms,:] = self.TS['positions'][-1]     
-                    self.done = True
+        if self.action_idx == 1:
+            TS_differences = np.abs(relative_energy-np.array(self.TS['energies']))
+            if np.min(TS_differences) < 0.05:
+                self.atoms.positions[self.free_atoms,:] = self.previous_atoms.positions[self.free_atoms,:].copy()
+                self.relative_energy = previous_energy
 
-                else:
-                    self.atoms.positions[self.free_atoms,:] = self.previous_atoms.positions[self.free_atoms,:].copy()
+            if relative_energy > 1.5 and np.max(np.array(self.positions)[:,2]) >0.68:
+                if np.min(TS_differences) > 0.05:
+                    if self.found_TS == 0:
+                        self.TS_H = self.dyn.pes.H.asarray().copy()
+                        eig, V = np.linalg.eigh(self.TS_H)
+                        if len(eig[eig<0]) == 1:
+                            self.found_TS = 1
+                            reward += 1/relative_energy # - np.max(self.TS['energies'])
+                            self.TS['energies'].append(relative_energy)
+                            self.TS['positions'].append(self.atoms.get_positions().copy())
+#                           #  self.history, self.trajectories = self._update_history(self.action_idx, self.relative_energy)
+#                             direction = np.sign(np.dot((self.initial_positions - self.atoms.positions).reshape(-1), V[:,0]))
+#                             dr =  direction * V[:,0].reshape(-1,3)
+#                             self.atoms.set_positions(atoms.get_positions() - dr)
+#                             dyn = BFGSLineSearch(atoms=self.atoms, logfile=None, trajectory=None)
+#                             converged = dyn.run(0.03)
+#                             if np.max(np.array(self.positions)[:,2]) < 0.66 and np.max(np.abs(relative_fps)) > 3\
+#         and np.min(minima_differences) > 0.05:
+#                                 self.minima['energies'].append(self._get_relative_energy())
+#                                 self.minima['timesteps'].append(self.history['timesteps'][-1] + 1)
+#                                 self.minima['TS'].append(self.TS['energies'][-1])
+#                                 self.minima['highest_energy'].append(self.highest_energy)
 
-            elif np.min(minima_differences) > 0.05:
-                if np.max(np.array(self.positions)[:,2]) < 0.66:
-                    self.minima['energies'].append(relative_energy)
+#                                 reward += 2 * np.exp(-thermal_ratio) / self.highest_energy
+#                                 self.minima['segregation'].append(self.history['timesteps'][-1] + 1)
+#                     else:
+#                         if self.dyn.nsteps > 1:
+#                             self.TS_H = self.dyn.pes.H.asarray().copy()
+                        
+
+        if self.action_idx == 2:
+            if self.found_TS == 1:
+                self.H = self.TS_H.copy()
+                eig, V = np.linalg.eigh(self.H)
+#                 direction = np.sign(np.dot((self.minima['positions'][-1] - self.atoms.positions).reshape(-1), V[:,0]))
+                direction = np.sign(np.dot((self.initial_positions - self.atoms.positions).reshape(-1), V[:,0]))
+                dr =  direction * V[:,0].reshape(-1,3)
+                self.atoms.set_positions(self.TS['positions'][-1] - dr)
+#                 self.atoms.set_positions(self.atoms.get_positions() - dr)
+                dyn = BFGSLineSearch(atoms=self.atoms, logfile=None, trajectory=None)
+                converged = dyn.run(0.03)
+
+                thermal_ratio = self._get_relative_energy()/self.thermal_energy
+                self.fps, self.fp_length = self._get_fingerprints(self.atoms)
+                self.positions = self.atoms.get_scaled_positions(wrap=False)[self.free_atoms]
+                relative_fps = self.fps - self.episode_initial_fps
+#                 self.done = True
+
+                minima_differences = np.abs(self._get_relative_energy()-np.array(self.minima['energies']))
+
+                if np.max(np.array(self.positions)[:,2]) < 0.66 and np.max(np.abs(relative_fps)) > 3\
+        and np.min(minima_differences) > 0.05:
+                    self.minima['energies'].append(self._get_relative_energy())
                     self.minima['timesteps'].append(self.history['timesteps'][-1] + 1)
                     self.minima['TS'].append(self.TS['energies'][-1])
                     self.minima['highest_energy'].append(self.highest_energy)
-
-                if np.max(np.array(self.positions)[:,2]) < 0.66 and self.max_height > 0.66 and np.max(np.abs(relative_fps)) > 3:
-                    reward += np.exp(-(relative_energy) / self.thermal_energy) / self.highest_energy
+                    self.minima['positions'].append(self.atoms.positions.copy())
+                    reward += 2 * np.exp(-thermal_ratio) / self.highest_energy
                     self.minima['segregation'].append(self.history['timesteps'][-1] + 1)
+#                             self.history, self.trajectories = self._update_history(self.action_idx, self._get_relative_energy())
                     self.done = True
-#                     self.highest_energy = relative_energy
-#                     self.thermal_threshold += relative_energy/self.thermal_energy # adjusting threshold
-#                     self.episode_initial_fps = self.fps.copy()
-                    self.max_height = 0
-        
-        if self.action_idx == 1 and np.abs(relative_energy - previous_energy) > 0.01: #TS search
-            TS_differences = np.abs(relative_energy-np.array(self.TS['energies']))
-            if np.min(TS_differences) > 0.05 and relative_energy > np.max(self.TS['energies']):
-#                 reward += relative_energy - np.max(self.TS['energies'])
-                self.TS['energies'].append(relative_energy)
-                self.TS['positions'].append(self.atoms.positions[self.free_atoms,:].copy())
-                
-        if thermal_ratio > self.thermal_threshold:
-#             reward -= relative_energy + self.initial_energy #self.atoms.get_potential_energy()
-            self.done = True
-    
+                else:                            
+#                             self.atoms.positions[self.free_atoms,:] = self.TS['positions'][-1]     
+#                             self.relative_energy = self.TS['energies'][-1]
+                    self.atoms.set_positions(self.TS['positions'][-1])
+                    self.relative_energy = self.TS['energies'][-1]
+
+            else: # fonud_TS == 0
+                dyn = BFGSLineSearch(atoms=self.atoms, logfile=None, trajectory=None)
+                converged = dyn.run(0.03)
+
+                self.fps, self.fp_length = self._get_fingerprints(self.atoms)
+                self.positions = self.atoms.get_scaled_positions(wrap=False)[self.free_atoms]
+                relative_fps = self.fps - self.episode_initial_fps
+
+                minima_differences = np.abs(self._get_relative_energy()-np.array(self.minima['energies']))
+                if np.min(minima_differences) < 0.05:
+                    self.atoms.positions[self.free_atoms,:] = self.previous_atoms.positions[self.free_atoms,:].copy()
+                    self.relative_energy = previous_energy
+                else:
+                    self.minima['energies'].append(self._get_relative_energy())
+                    self.minima['timesteps'].append(self.history['timesteps'][-1] + 1)
+                    self.minima['TS'].append(self.TS['energies'][-1])
+                    self.minima['highest_energy'].append(self.highest_energy)  
+                    self.minima['positions'].append(self.atoms.positions.copy())
+
         return reward
-    
+        
     def sigmoid(self, thermal_ratio):
         L = 10
         k = 4
@@ -592,7 +615,7 @@ class MCSEnv(gym.Env):
                     logfile='sella.log'
                     )
         converged = dyn.run(0.05)#, steps = self.steps)#, steps=self.steps)
-        return converged
+        return dyn
     
     def _get_relative_energy(self):
         return self.atoms.get_potential_energy() - self.initial_energy
@@ -601,16 +624,16 @@ class MCSEnv(gym.Env):
         # helper function to get the current observation, which is just the position
         # of the free atoms as one long vector (should be improved)
            
-#         observation = {'energy':np.array(self.relative_energy).reshape(1,)}
-        observation = {}
+        observation = {'energy':np.array(self._get_relative_energy()).reshape(1,)}
+#         observation = {}
         
         if self.observation_fingerprints:
-            observation['fingerprints'] = self.fps - self.episode_initial_fps
+            observation['fingerprints'] = (self.fps - self.episode_initial_fps)[self.free_atoms, :].flatten()
             
         
-        observation['positions'] = self.positions.flatten()
+        observation['positions'] = self.atoms.get_scaled_positions()[self.free_atoms, :].flatten()
             
-#         if self.observation_forces:
+        if self.observation_forces:
             
 #             #Clip the forces to the state space limits to avoid really bad forces
 #             forces = self.atoms.get_forces()[self.free_atoms, :]
@@ -618,9 +641,11 @@ class MCSEnv(gym.Env):
 #             forces = np.clip(forces, 
 #                          self.observation_space['forces'].low[0],
 #                          self.observation_space['forces'].high[0])
-#         self.forces =  self.atoms.get_forces()[self.free_atoms, :]
-#         observation['forces'] = self.forces.flatten()
-
+            self.forces =  self.atoms.get_forces()[self.free_atoms, :]
+            observation['forces'] = self.forces.flatten()
+        
+        observation['TS'] = np.array([self.found_TS]).reshape(1,)
+            
         return observation
     
     def _get_fingerprints(self, atoms):
@@ -634,17 +659,20 @@ class MCSEnv(gym.Env):
         
         observation_space = spaces.Dict({'fingerprints': spaces.Box(low=-6,
                                         high=6,
-                                        shape=(len(self.atoms), self.fp_length)),
+                                        shape=(len(self.free_atoms)*self.fp_length, )),
                                         'positions': spaces.Box(low=-1,
                                         high=2,
                                         shape=(len(self.free_atoms)*3,)),
-#                                         'energy': spaces.Box(low=-2,
-#                                                               high=2,
-#                                                               shape=(1,)),
-#                                          'forces': spaces.Box(low= -2,
-#                                                              high= 2,
-#                                                              shape=(len(self.free_atoms)*3,)
-#                                                             )
+                                        'energy': spaces.Box(low=-1,
+                                                              high=2.5,
+                                                              shape=(1,)),
+                                         'forces': spaces.Box(low= -2,
+                                                             high= 2,
+                                                             shape=(len(self.free_atoms)*3,)
+                                                            ),
+                                         'TS': spaces.Box(low=-0.5,
+                                                              high=1.5,
+                                                              shape=(1,)),
                                         })
 
         return observation_space
@@ -679,27 +707,6 @@ class MCSEnv(gym.Env):
         fixed_atoms_idx = c.get_indices()
         free_atoms_idx = list(set(np.arange(len(element_list))) ^ set(fixed_atoms_idx))
         free_atoms = element_list[free_atoms_idx]
-        if self.random_initial:
-            np.random.seed(None)
-            self.random_free_atoms = np.random.permutation(free_atoms)
-            new_element_list = list(element_list[fixed_atoms_idx]) + list(self.random_free_atoms)
-            slab.set_chemical_symbols(new_element_list)        
-        
-        if self.different_initial:
-            np.random.seed(None)
-#             self.random_free_atoms = np.random.permutation(free_atoms)
-            new_element_list = list(element_list[fixed_atoms_idx]) + list(self.random_free_atoms)
-            slab.set_chemical_symbols(new_element_list)       
-        
-        if self.Au_sublayer:
-            new_free_atoms = ['Au', 'Au', 'Au', 'Au', 'Ni', 'Pd', 'Pd', 'Ni'] # 4 Au in sublayer 
-            new_element_list = list(element_list[fixed_atoms_idx]) + list(new_free_atoms)
-            slab.set_chemical_symbols(new_element_list)  
-            
-        if self.worse_initial:
-            new_free_atoms = ['Pd', 'Au', 'Pd', 'Au', 'Ni', 'Ni', 'Pd', 'Ni']
-            new_element_list = list(element_list[fixed_atoms_idx]) + list(new_free_atoms)
-            slab.set_chemical_symbols(new_element_list)  
                   
         # Do a quick minimization to relax the structure
         dyn = BFGSLineSearch(atoms=slab, logfile=None)
