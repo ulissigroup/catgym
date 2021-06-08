@@ -110,3 +110,4 @@ To use a pre-trained DRL agent, ...
 (a) An example energy pathway to a global minimum developed by DRl method. Each data point represents the relative energy $\Delta E$ of an Ni-Pd-Au configuration generated after taking a certain action at each timestep. (b) A minimum energy pathway, created by NEB, to the same global minimum. (c) Ni(green)-Pd(blue)-Au(gold) configurations of the initial state, transitions states built by DRL method and NEB, and the global minimum.
 
 ## Acknowledgement
+The information, data, or work presented herein was funded in part by the Advanced Research Projects Agency – Energy (ARPA-E), U.S. Department of Energy, under Award Number DE-AR0001221.
