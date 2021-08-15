@@ -28,7 +28,7 @@ Surface segregation using Deep Reinforcement Learning
 
 * if you need to rebuild the image, go to the docker folder and `docker build . -t surface_seg` -->
 
-# Reinforcement Learning for Identifying Metastable Catalysts
+# Deep Reinforcement Learning for Identifying Metastable Catalysts
 
 [**Deep reinforcement learning for predicting kinetic pathways to surface reconstruction in a ternary alloy**](https://iopscience.iop.org/article/10.1088/2632-2153/ac191c) </br>
 Junwoong Yoon*, Zhonglin Cao*, Rajesh Raju*, Yuyang Wang, Robert Burnley, Andrew J. Gellman, Amir Barati Farimani<sup>+</sup>, Zachary W. Ulissi<sup>+</sup> </br>
