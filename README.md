@@ -35,7 +35,8 @@ Junwoong Yoon*, Zhonglin Cao*, Rajesh Raju*, Yuyang Wang, Robert Burnley, Andrew
 (*equal contribution, <sup>+</sup>corresponding authors) <br/>
 Carnegie Mellon University
 
-[[arXiv]]() [[PDF]]()
+[[Paper]](https://iopscience.iop.org/article/10.1088/2632-2153/ac191c) 
+<!-- [[arXiv]]() [[PDF]]() -->
 
 <img src="figs/pipeline.png" width="750">
 
