@@ -7,5 +7,5 @@ RUN pip install git+https://github.com/ulissigroup/sella.git
 RUN pip install git+https://github.com/ulissigroup/amptorch.git
 RUN pip install --no-deps git+https://github.com/MDIL-SNU/SIMPLE-NN.git
 
-RUN mkdir surface_seg
-RUN conda develop /home/jovyan/surface_seg
+RUN mkdir catgym
+RUN conda develop /home/jovyan/catgym

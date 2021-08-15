@@ -30,7 +30,7 @@ Surface segregation using Deep Reinforcement Learning
 
 # Reinforcement Learning for Identifying Metastable Catalysts
 
-[**Reinforcement Learning for Identifying Metastable Catalysts**]() </br>
+[**Deep reinforcement learning for predicting kinetic pathways to surface reconstruction in a ternary alloy**]() </br>
 Junwoong Yoon*, Zhonglin Cao*, Rajesh Raju*, Yuyang Wang, Robert Burnley, Andrew J. Gellman, Amir Barati Farimani<sup>+</sup>, Zachary W. Ulissi<sup>+</sup> </br>
 (*equal contribution, <sup>+</sup>corresponding authors) <br/>
 Carnegie Mellon University
@@ -41,17 +41,23 @@ Carnegie Mellon University
 
 If you find this work useful in your research, please cite:
 
-    bibtex placeholder here
+    @article{yoon2021deep,
+        title={Deep reinforcement learning for predicting kinetic pathways to surface reconstruction in a ternary alloy},
+        author={Yoon, Junwoong and Cao, Zhonglin and Raju, Rajesh and Wang, Yuyang and Burnley, Robert and Gellman, Andrew J and Farimani, Amir Barati and Ulissi, Zachary W},
+        journal={Machine Learning: Science and Technology},
+        year={2021},
+        publisher={IOP Publishing}
+    }
 
 ## Installation
 
 ### Custom Installation
 1. Clone the github repo
 ```
-$ git clone https://github.com/ulissigroup/surface_seg
-$ cd surface_seg
-$ conda env create --name surface_seg
-$ conda activate surface_seg
+$ git clone https://github.com/ulissigroup/catgym
+$ cd catgym
+$ conda env create --name catgym
+$ conda activate catgym
 $ conda install -c anaconda pip
 ```
 
@@ -76,32 +82,30 @@ $ python setup.py develop
 ### Docker Installation
 
 ```
-$ git clone https://github.com/ulissigroup/surface_seg
-$ cd surface_seg
-$ docker run --rm -p 8888:8888 --gpus all -e JUPYTER_ENABLE_LAB=yes -e MKL_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e NUMEXPR_NUM_THREADS=1 -e MKL_DEBUG_CPU_TYPE=5 -v "$PWD":/home/jovyan/surface_seg ulissigroup/surface_seg
+$ git clone https://github.com/ulissigroup/catgym
+$ cd catgym
+$ docker run --rm -p 8888:8888 --gpus all -e JUPYTER_ENABLE_LAB=yes -e MKL_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e NUMEXPR_NUM_THREADS=1 -e MKL_DEBUG_CPU_TYPE=5 -v "$PWD":/home/jovyan/catgym ulissigroup/catgym
 ```
 - Password for JupyterLab is `asdf`
 - To rebuild the image
 ```
 $ cd docker
-$ docker build . -t surface_seg
+$ docker build . -t catgym
 ```
 
 ### Notes for nersc intallation
 - The same conda installation won't work for CPU and GPU and nodes. Something about ASAP3 calculator.
 - ffmpeg from conda has a problem when running in parallel. Best to use `module load ffmpeg`.
 
-## Environments
+## Environment
 
-To use the gym-based surface segragation environments, please refer to `surface_seg/envs`.
+To use the gym-based surface segragation environment, please refer to `surface_seg/envs/catgym_env.py`.
 
 ## Training 
 
-To train a DRL agent for finding a surface segregation trajectory. Please run the file `examples/notebooks/run_surface_seg.ipynb`.
+To train a DRL agent for finding surface segregation trajectories. Please run the file `examples/notebooks/Train_CatGym.ipynb`.
 
-## Pre-trained DRL Agent
-
-To use a pre-trained DRL agent, ...
+To evaluate a trained DRL agent. Please run the file `examples/notebooks/Evaluation.ipynb`.
 
 ## Results
 
