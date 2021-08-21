@@ -106,7 +106,8 @@ To use the gym-based surface segragation environment, please refer to `surface_s
 
 To train a DRL agent for finding surface segregation trajectories. Please run the file `examples/notebooks/Train_CatGym.ipynb`.
 
-To evaluate a trained DRL agent. Please run the file `examples/notebooks/Evaluation.ipynb`.
+## Pretrained agent
+A TRPO agent is trained with the CatGYM environment for 10000 episodes. The trained agent is saved in `surface_seg/pretrained` folder. Please run the file `examples/notebooks/Evaluation.ipynb` to find surface reconstruction pathways using the pretrained agent.
 
 ## Results
 
