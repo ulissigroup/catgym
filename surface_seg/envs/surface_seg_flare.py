@@ -125,6 +125,9 @@ class MCSEnv(gym.Env):
         self.relative_energy = 0.0  # self._get_relative_energy()
 
         self.atoms = self.initial_atoms.copy()
+        
+        self.initial_config = copy.copy(self.initial_atoms)
+        self.initial_snn_params = copy.copy(self.snn_params)
 
         self.observation_positions = observation_positions
         self.observation_fingerprints = observation_fingerprints
@@ -246,7 +249,7 @@ class MCSEnv(gym.Env):
             #                 self.atoms.set_positions(self.atoms.get_positions() - dr)
 
             dyn = BFGSLineSearch(
-                atoms=self.atoms, logfile=None, trajectory=save_path_min
+                atoms=self.atoms, logfile='Min.log', trajectory=save_path_min
             )
             converged = dyn.run(0.03)
 
@@ -257,6 +260,7 @@ class MCSEnv(gym.Env):
                 units.kB * self.temperature,
                 0.01,
                 trajectory=save_path_md,
+                logfile = 'MD.log',
             )  # 5 fs --> 20
             converged = dyn.run(self.steps)
 
@@ -303,7 +307,9 @@ class MCSEnv(gym.Env):
         if os.path.exists("sella.log"):
             os.remove("sella.log")
         # Initialize Atoms and Calculator
-        self.new_initial_atoms, self.snn_params = self._get_initial_slab()
+        #self.new_initial_atoms, self.snn_params = self._get_initial_slab()
+        self.new_initial_atoms  = self.initial_config
+        self.snn_params = self.initial_snn_params
         self.atoms = self.new_initial_atoms.copy()
         self.atoms.set_calculator(self.ML_calc)
         _calc = self.atoms.get_calculator()
